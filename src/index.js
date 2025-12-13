@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const typeDefs = require('./schema/typeDefs');
 const resolvers = require('./resolvers');
+const logger = require('./utils/logger');
 
 const startServer = async () => {
   try {
@@ -12,7 +13,7 @@ const startServer = async () => {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
-    console.log('Connected to MongoDB');
+    logger.info('Connected to MongoDB');
 
     // Initialize Apollo Server
     const server = new ApolloServer({
@@ -25,7 +26,7 @@ const startServer = async () => {
           try {
             user = jwt.verify(token, process.env.JWT_SECRET);
           } catch (err) {
-            console.error('Invalid token');
+            logger.error('Invalid token');
           }
         }
         return { req, user };
@@ -34,9 +35,9 @@ const startServer = async () => {
 
     // Start the server
     const { url } = await server.listen({ port: process.env.PORT || 4000 });
-    console.log(`Server is running at ${url}`);
+    logger.info(`Server is running at ${url}`);
   } catch (error) {
-    console.error('Error starting the server:', error);
+    logger.error(`Error starting the server: ${error.message}`);
   }
 };
 

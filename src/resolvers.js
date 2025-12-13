@@ -7,6 +7,7 @@ const { ErrorHandler } = require('./utils/errorHandler');
 const { registerUser, loginUser } = require('./services/userService');
 const { addProduct, getProducts } = require('./services/productService');
 const { createOrder, getOrders } = require('./services/orderService');
+const logger = require('./utils/logger');
 
 const resolvers = {
   Query: {
@@ -15,14 +16,48 @@ const resolvers = {
     orders: async () => await getOrders(),
   },
   Mutation: {
-    register: async (_, args) => await registerUser(args),
-    login: async (_, args) => await loginUser(args),
-    addProduct: async (_, args) => await addProduct(args),
-    createOrder: async (_, args, context) => {
-      if (!context.user) {
-        throw new ErrorHandler('Unauthorized', 401);
+    register: async (_, args) => {
+      try {
+        const user = await registerUser(args);
+        logger.info(`User registered: ${user.email}`);
+        return user;
+      } catch (error) {
+        logger.error(`Registration error: ${error.message}`);
+        throw error;
       }
-      return await createOrder({ userId: context.user.id, ...args });
+    },
+    login: async (_, args) => {
+      try {
+        const token = await loginUser(args);
+        logger.info(`User logged in: ${args.email}`);
+        return token;
+      } catch (error) {
+        logger.error(`Login error: ${error.message}`);
+        throw error;
+      }
+    },
+    addProduct: async (_, args) => {
+      try {
+        const product = await addProduct(args);
+        logger.info(`Product added: ${product.name}`);
+        return product;
+      } catch (error) {
+        logger.error(`Add product error: ${error.message}`);
+        throw error;
+      }
+    },
+    createOrder: async (_, args, context) => {
+      try {
+        if (!context.user) {
+          throw new ErrorHandler('Unauthorized', 401);
+        }
+        const order = await createOrder({ userId: context.user.id, ...args });
+        logger.info(`Order created: ${order.id}`);
+        return order;
+      } catch (error) {
+        logger.error(`Create order error: ${error.message}`);
+        throw error;
+      }
     },
   },
 };
