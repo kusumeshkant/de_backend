@@ -1,44 +1,36 @@
 require('dotenv').config();
-const { ApolloServer } = require('apollo-server');
+
+const { ApolloServer } = require('@apollo/server');
+const { startStandaloneServer } = require('@apollo/server/standalone');
 const mongoose = require('mongoose');
-const jwt = require('jsonwebtoken');
 const typeDefs = require('./schema/typeDefs');
 const resolvers = require('./resolvers');
+const { verifyToken } = require('./middleware/auth');
 const logger = require('./utils/logger');
 
 const startServer = async () => {
   try {
-    // Connect to MongoDB
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
+
+    await mongoose.connect(process.env.MONGO_URI);
     logger.info('Connected to MongoDB');
 
-    // Initialize Apollo Server
-    const server = new ApolloServer({
-      typeDefs,
-      resolvers,
-      introspection: true,
-      context: ({ req }) => {
-        const token = req.headers.authorization || '';
-        let user = null;
-        if (token) {
-          try {
-            user = jwt.verify(token, process.env.JWT_SECRET);
-          } catch (err) {
-            logger.error('Invalid token');
-          }
-        }
-        return { req, user };
+    const server = new ApolloServer({ typeDefs, resolvers });
+
+    const port = Number(process.env.PORT) || 4000;
+
+    const { url } = await startStandaloneServer(server, {
+      context: async ({ req }) => {
+        const user = await verifyToken(req);
+        return { user };
       },
+      listen: { port },
     });
 
-    // Start the server
-    const { url } = await server.listen({ port: process.env.PORT || 4000 });
-    logger.info(`Server is running at ${url}`);
+    logger.info(`GraphQL server ready at ${url}`);
   } catch (error) {
-    logger.error(`Error starting the server: ${error.message}`);
+    logger.error(`Fatal error: ${error.message}`);
+    process.exit(1);
   }
 };
 

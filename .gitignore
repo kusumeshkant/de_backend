@@ -8,6 +8,10 @@ yarn.lock
 .env.local
 .env.*.local
 
+# Firebase credentials (never commit)
+firebase-service-account.json
+*-service-account.json
+
 # IDE
 .vscode/
 .idea/

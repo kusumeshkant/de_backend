@@ -1,64 +1,98 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const User = require('./models/User');
-const Product = require('./models/Product');
-const Order = require('./models/Order');
-const { ErrorHandler } = require('./utils/errorHandler');
-const { registerUser, loginUser } = require('./services/userService');
-const { addProduct, getProducts } = require('./services/productService');
-const { createOrder, getOrders } = require('./services/orderService');
+const { GraphQLError } = require('graphql');
+const { getOrCreateUser } = require('./services/userService');
+const { getProductByBarcode } = require('./services/productService');
+const { getStores, getStoreById } = require('./services/storeService');
+const { createOrder, getMyOrders, getOrderById } = require('./services/orderService');
 const logger = require('./utils/logger');
+
+function requireAuth(context) {
+  if (!context.user) {
+    throw new GraphQLError('You must be logged in', {
+      extensions: { code: 'UNAUTHENTICATED' },
+    });
+  }
+}
 
 const resolvers = {
   Query: {
-    users: async () => await User.find(),
-    products: async () => await getProducts(),
-    orders: async () => await getOrders(),
+    productByBarcode: async (_, { barcode }) => {
+      try {
+        return await getProductByBarcode(barcode);
+      } catch (error) {
+        logger.error(`productByBarcode error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    stores: async () => {
+      try {
+        return await getStores();
+      } catch (error) {
+        logger.error(`stores error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    store: async (_, { id }) => {
+      try {
+        return await getStoreById(id);
+      } catch (error) {
+        logger.error(`store error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    myOrders: async (_, __, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        return await getMyOrders(user._id);
+      } catch (error) {
+        logger.error(`myOrders error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    order: async (_, { id }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        return await getOrderById(id, user._id);
+      } catch (error) {
+        logger.error(`order error: ${error.message}`);
+        throw error;
+      }
+    },
   },
+
   Mutation: {
-    register: async (_, args) => {
-      try {
-        const user = await registerUser(args);
-        logger.info(`User registered: ${user.email}`);
-        return user;
-      } catch (error) {
-        logger.error(`Registration error: ${error.message}`);
-        throw error;
-      }
-    },
-    login: async (_, args) => {
-      try {
-        const token = await loginUser(args);
-        logger.info(`User logged in: ${args.email}`);
-        return token;
-      } catch (error) {
-        logger.error(`Login error: ${error.message}`);
-        throw error;
-      }
-    },
-    addProduct: async (_, args) => {
-      try {
-        const product = await addProduct(args);
-        logger.info(`Product added: ${product.name}`);
-        return product;
-      } catch (error) {
-        logger.error(`Add product error: ${error.message}`);
-        throw error;
-      }
-    },
     createOrder: async (_, args, context) => {
+      requireAuth(context);
       try {
-        if (!context.user) {
-          throw new ErrorHandler('Unauthorized', 401);
-        }
-        const order = await createOrder({ userId: context.user.id, ...args });
-        logger.info(`Order created: ${order.id}`);
+        const user = await getOrCreateUser(context.user);
+        const order = await createOrder({ userId: user._id, ...args });
+        logger.info(`Order created: ${order._id}`);
         return order;
       } catch (error) {
-        logger.error(`Create order error: ${error.message}`);
+        logger.error(`createOrder error: ${error.message}`);
         throw error;
       }
     },
+  },
+
+  // Map MongoDB _id to GraphQL id
+  Order: {
+    id: (order) => order._id.toString(),
+    createdAt: (order) => order.createdAt.toISOString(),
+    storeName: (order) => order._storeName ?? null,
+  },
+
+  Product: {
+    id: (product) => product._id.toString(),
+  },
+
+  Store: {
+    id: (store) => store._id.toString(),
   },
 };
 

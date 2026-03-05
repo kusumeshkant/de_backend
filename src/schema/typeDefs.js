@@ -1,45 +1,76 @@
-const { gql } = require('apollo-server');
-
-const userType = gql`
-  type User {
-    id: ID!
-    name: String!
-    email: String!
-    password: String!
-  }
-`;
-
-const productType = gql`
+const typeDefs = `#graphql
   type Product {
     id: ID!
+    barcode: String!
     name: String!
-    description: String!
+    description: String
     price: Float!
-    stock: Int!
+    imageUrl: String
+    storeId: ID
   }
-`;
 
-const orderType = gql`
+  type Store {
+    id: ID!
+    name: String!
+    address: String
+    imageUrl: String
+    latitude: Float
+    longitude: Float
+  }
+
+  type OrderItem {
+    barcode: String!
+    name: String!
+    price: Float!
+    quantity: Int!
+  }
+
   type Order {
     id: ID!
-    user: User!
-    products: [Product!]!
+    storeId: ID
+    storeName: String
     total: Float!
+    tax: Float!
+    grandTotal: Float!
+    status: String!
     createdAt: String!
+    items: [OrderItem!]!
+  }
+
+  input OrderItemInput {
+    barcode: String!
+    name: String!
+    price: Float!
+    quantity: Int!
   }
 
   type Query {
-    users: [User!]!
-    products: [Product!]!
-    orders: [Order!]!
+    # Used by scanner — look up a product by barcode
+    productByBarcode(barcode: String!): Product
+
+    # Used by dashboard — list all stores
+    stores: [Store!]!
+
+    # Get a single store
+    store(id: ID!): Store
+
+    # Order history (requires Firebase auth)
+    myOrders: [Order!]!
+
+    # Single order detail (requires Firebase auth)
+    order(id: ID!): Order
   }
 
   type Mutation {
-    register(name: String!, email: String!, password: String!): User!
-    login(email: String!, password: String!): String!
-    addProduct(name: String!, description: String!, price: Float!, stock: Int!): Product!
-    createOrder(products: [ID!]!): Order!
+    # Submit cart as an order (requires Firebase auth)
+    createOrder(
+      storeId: ID!
+      items: [OrderItemInput!]!
+      total: Float!
+      tax: Float!
+      grandTotal: Float!
+    ): Order!
   }
 `;
 
-module.exports = [userType, productType, orderType];
+module.exports = typeDefs;

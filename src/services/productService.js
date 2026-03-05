@@ -1,17 +1,11 @@
 const Product = require('../models/Product');
-const { ErrorHandler } = require('../utils/errorHandler');
 
-const addProduct = async ({ name, description, price, stock }) => {
-  const product = new Product({ name, description, price, stock });
-  await product.save();
-  return product;
-};
+async function getProductByBarcode(barcode) {
+  return await Product.findOne({ barcode });
+}
 
-const getProducts = async () => {
+async function getProducts() {
   return await Product.find();
-};
+}
 
-module.exports = {
-  addProduct,
-  getProducts,
-};
+module.exports = { getProductByBarcode, getProducts };
