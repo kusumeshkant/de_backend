@@ -1,7 +1,7 @@
 const Product = require('../models/Product');
 
-async function getProductByBarcode(barcode) {
-  return await Product.findOne({ barcode });
+async function getProductByBarcode(barcode, storeId) {
+  return await Product.findOne({ barcode, storeId });
 }
 
 async function getProducts() {

@@ -5,6 +5,7 @@ const userSchema = new mongoose.Schema({
   name: { type: String },
   phone: { type: String },
   email: { type: String },
+  fcmToken: { type: String },
   created_at: { type: Date, default: Date.now },
 });
 

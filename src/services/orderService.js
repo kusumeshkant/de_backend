@@ -50,4 +50,28 @@ async function getOrderById(orderId, userId) {
   return order;
 }
 
-module.exports = { createOrder, getMyOrders, getOrderById };
+const VALID_STATUSES = ['pending', 'preparing', 'ready', 'completed', 'cancelled'];
+
+async function updateOrderStatus(orderId, status) {
+  if (!VALID_STATUSES.includes(status)) {
+    throw new Error(`Invalid status "${status}". Must be one of: ${VALID_STATUSES.join(', ')}`);
+  }
+
+  const order = await Order.findByIdAndUpdate(
+    orderId,
+    { status },
+    { new: true }
+  );
+
+  if (!order) throw new Error('Order not found');
+
+  const store = await Store.findById(order.storeId);
+  order._storeName = store?.name ?? null;
+
+  // Attach user ID so resolver can look up FCM token
+  order._userId = order.user;
+
+  return order;
+}
+
+module.exports = { createOrder, getMyOrders, getOrderById, updateOrderStatus };

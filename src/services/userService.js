@@ -13,4 +13,20 @@ async function getOrCreateUser({ uid, phone, email }) {
   return user;
 }
 
-module.exports = { getOrCreateUser };
+async function getProfile(userId) {
+  return User.findById(userId);
+}
+
+async function updateProfile(userId, { name }) {
+  return User.findByIdAndUpdate(
+    userId,
+    { name },
+    { new: true }
+  );
+}
+
+async function updateFcmToken(userId, fcmToken) {
+  return User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
+}
+
+module.exports = { getOrCreateUser, getProfile, updateProfile, updateFcmToken };

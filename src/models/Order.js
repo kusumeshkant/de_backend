@@ -14,7 +14,13 @@ const orderSchema = new mongoose.Schema({
   total: { type: Number, required: true },
   tax: { type: Number, required: true },
   grandTotal: { type: Number, required: true },
-  status: { type: String, default: 'pending' },
+  status: {
+    type: String,
+    enum: ['pending', 'preparing', 'ready', 'completed', 'cancelled'],
+    default: 'pending',
+  },
+  razorpayOrderId: { type: String },
+  razorpayPaymentId: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 
