@@ -13,13 +13,10 @@ RUN npm install
 # Copy the rest of the application code
 COPY . .
 
-# Set environment variables
+# Only set NODE_ENV here — all secrets injected by Railway at runtime
 ENV NODE_ENV=production
-ENV PORT=4000
-ENV MONGO_URI=mongodb+srv://<db_username>:<db_password>@cluster0.jhhxq5e.mongodb.net/?appName=Cluster0
-ENV JWT_SECRET=your_jwt_secret
 
-# Expose the port the app runs on
+# Railway injects PORT automatically, default to 4000
 EXPOSE 4000
 
 # Define the command to run the application
