@@ -1,9 +1,9 @@
 const { GraphQLError } = require('graphql');
-const { getOrCreateUser, getProfile, updateProfile, updateFcmToken } = require('./services/userService');
+const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole } = require('./services/userService');
 const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService');
-const { getProductByBarcode } = require('./services/productService');
-const { getStores, getStoreById, getNearbyStores } = require('./services/storeService');
-const { createOrder, getMyOrders, getOrderById, updateOrderStatus } = require('./services/orderService');
+const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct } = require('./services/productService');
+const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
+const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
 const logger = require('./utils/logger');
 
@@ -85,6 +85,76 @@ const resolvers = {
         throw error;
       }
     },
+
+    storeOrders: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        return await getStoreOrders(storeId);
+      } catch (error) {
+        logger.error(`storeOrders error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    orderById: async (_, { orderId }, context) => {
+      requireAuth(context);
+      try {
+        return await getOrderByIdForStaff(orderId);
+      } catch (error) {
+        logger.error(`orderById error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    allOrders: async (_, { storeId, status }, context) => {
+      requireAuth(context);
+      try {
+        return await getAllOrders({ storeId, status });
+      } catch (error) {
+        logger.error(`allOrders error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    dashboardStats: async (_, __, context) => {
+      requireAuth(context);
+      try {
+        return await getDashboardStats();
+      } catch (error) {
+        logger.error(`dashboardStats error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    storeStats: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        return await getStoreStats(storeId);
+      } catch (error) {
+        logger.error(`storeStats error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    allStaff: async (_, __, context) => {
+      requireAuth(context);
+      try {
+        return await getAllStaff();
+      } catch (error) {
+        logger.error(`allStaff error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    storeProducts: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        return await getStoreProducts(storeId);
+      } catch (error) {
+        logger.error(`storeProducts error: ${error.message}`);
+        throw error;
+      }
+    },
   },
 
   Mutation: {
@@ -158,13 +228,19 @@ const resolvers = {
     updateOrderStatus: async (_, { orderId, status }, context) => {
       requireAuth(context);
       try {
-        const order = await updateOrderStatus(orderId, status);
+        const staffUser = await getOrCreateUser(context.user);
+        const order = await updateOrderStatus(
+          orderId,
+          status,
+          staffUser._id.toString(),
+          staffUser.name ?? 'Staff'
+        );
 
-        // Look up user's FCM token to send status push
+        // Look up customer's FCM token to send status push
         const User = require('./models/User');
-        const user = await User.findById(order._userId);
-        if (user?.fcmToken) {
-          sendOrderStatusUpdate(user.fcmToken, {
+        const customer = await User.findById(order._userId);
+        if (customer?.fcmToken) {
+          sendOrderStatusUpdate(customer.fcmToken, {
             status,
             storeName: order._storeName,
           }).catch(() => {});
@@ -176,26 +252,135 @@ const resolvers = {
         throw error;
       }
     },
-  },
 
-  // Map MongoDB _id to GraphQL id
-  User: {
-    id: (user) => user._id.toString(),
+    flagOrderIssue: async (_, { orderId, reason, note }, context) => {
+      requireAuth(context);
+      try {
+        const staffUser = await getOrCreateUser(context.user);
+        return await flagOrderIssue(
+          orderId,
+          reason,
+          note ?? '',
+          staffUser._id.toString(),
+          staffUser.name ?? 'Staff'
+        );
+      } catch (error) {
+        logger.error(`flagOrderIssue error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    createStore: async (_, { name, address, lat, lon }, context) => {
+      requireAuth(context);
+      try {
+        return await createStore({ name, address, lat, lon });
+      } catch (error) {
+        logger.error(`createStore error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    updateStore: async (_, { id, name, address, lat, lon }, context) => {
+      requireAuth(context);
+      try {
+        return await updateStore(id, { name, address, lat, lon });
+      } catch (error) {
+        logger.error(`updateStore error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    deleteStore: async (_, { id }, context) => {
+      requireAuth(context);
+      try {
+        return await deleteStore(id);
+      } catch (error) {
+        logger.error(`deleteStore error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    createProduct: async (_, { storeId, barcode, name, description, price, stock }, context) => {
+      requireAuth(context);
+      try {
+        return await createProduct({ storeId, barcode, name, description, price, stock });
+      } catch (error) {
+        logger.error(`createProduct error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    updateProduct: async (_, { id, name, description, price, stock }, context) => {
+      requireAuth(context);
+      try {
+        return await updateProduct(id, { name, description, price, stock });
+      } catch (error) {
+        logger.error(`updateProduct error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    deleteProduct: async (_, { id }, context) => {
+      requireAuth(context);
+      try {
+        return await deleteProduct(id);
+      } catch (error) {
+        logger.error(`deleteProduct error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    updateUserRole: async (_, { userId, role, storeId }, context) => {
+      requireAuth(context);
+      try {
+        return await updateUserRole(userId, role, storeId);
+      } catch (error) {
+        logger.error(`updateUserRole error: ${error.message}`);
+        throw error;
+      }
+    },
   },
 
   Order: {
     id: (order) => order._id.toString(),
     createdAt: (order) => order.createdAt.toISOString(),
     storeName: (order) => order._storeName ?? null,
+    staffActions: (order) =>
+      (order.staffActions ?? []).map((a) => ({
+        ...a,
+        timestamp: a.timestamp instanceof Date ? a.timestamp.toISOString() : a.timestamp,
+      })),
+    flaggedIssue: (order) => {
+      if (!order.flaggedIssue) return null;
+      const f = order.flaggedIssue;
+      return {
+        ...f.toObject?.() ?? f,
+        timestamp: f.timestamp instanceof Date ? f.timestamp.toISOString() : f.timestamp,
+      };
+    },
+  },
+
+  User: {
+    id: (user) => user._id.toString(),
+    storeId: (user) => user.storeId?.toString() ?? null,
   },
 
   Product: {
     id: (product) => product._id.toString(),
+    storeId: (product) => product.storeId?.toString() ?? null,
   },
 
   Store: {
     id: (store) => store._id.toString(),
     distanceKm: (store) => store.distanceKm ?? null,
+  },
+
+  StoreRevenue: {
+    store: (sr) => sr.store,
+  },
+
+  StoreStats: {
+    store: (ss) => ss.store,
   },
 };
 

@@ -46,4 +46,23 @@ function _haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-module.exports = { getStores, getStoreById, getNearbyStores };
+async function createStore({ name, address, lat, lon }) {
+  const store = new Store({ name, address, latitude: lat, longitude: lon });
+  return await store.save();
+}
+
+async function updateStore(id, { name, address, lat, lon }) {
+  const update = {};
+  if (name !== undefined) update.name = name;
+  if (address !== undefined) update.address = address;
+  if (lat !== undefined) update.latitude = lat;
+  if (lon !== undefined) update.longitude = lon;
+  return await Store.findByIdAndUpdate(id, update, { new: true });
+}
+
+async function deleteStore(id) {
+  const result = await Store.findByIdAndDelete(id);
+  return !!result;
+}
+
+module.exports = { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore };

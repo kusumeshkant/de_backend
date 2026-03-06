@@ -29,4 +29,14 @@ async function updateFcmToken(userId, fcmToken) {
   return User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
 }
 
-module.exports = { getOrCreateUser, getProfile, updateProfile, updateFcmToken };
+async function getAllStaff() {
+  return await User.find({ role: { $in: ['staff', 'admin'] } }).sort({ name: 1 });
+}
+
+async function updateUserRole(userId, role, storeId) {
+  const update = { role };
+  if (storeId !== undefined) update.storeId = storeId ?? null;
+  return await User.findByIdAndUpdate(userId, update, { new: true });
+}
+
+module.exports = { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole };

@@ -27,6 +27,22 @@ const typeDefs = `#graphql
     quantity: Int!
   }
 
+  type StaffAction {
+    staffId: String
+    staffName: String
+    action: String!
+    timestamp: String!
+    note: String
+  }
+
+  type FlaggedIssue {
+    reason: String!
+    note: String
+    staffId: String
+    staffName: String
+    timestamp: String!
+  }
+
   type Order {
     id: ID!
     storeId: ID
@@ -37,6 +53,8 @@ const typeDefs = `#graphql
     status: String!
     createdAt: String!
     items: [OrderItem!]!
+    staffActions: [StaffAction!]!
+    flaggedIssue: FlaggedIssue
   }
 
   input OrderItemInput {
@@ -51,6 +69,8 @@ const typeDefs = `#graphql
     phone: String
     name: String
     email: String
+    role: String
+    storeId: ID
   }
 
   type Query {
@@ -74,6 +94,27 @@ const typeDefs = `#graphql
 
     # Single order detail (requires Firebase auth)
     order(id: ID!): Order
+
+    # All orders for a store — used by dq_staff (requires Firebase auth)
+    storeOrders(storeId: ID!): [Order!]!
+
+    # Look up any order by ID — used by dq_staff QR scan / search (requires Firebase auth)
+    orderById(orderId: ID!): Order
+
+    # Admin: all orders across stores, optional filters (requires Firebase auth)
+    allOrders(storeId: ID, status: String): [Order!]!
+
+    # Admin: global dashboard stats (requires Firebase auth)
+    dashboardStats: DashboardStats!
+
+    # Admin: per-store analytics (requires Firebase auth)
+    storeStats(storeId: ID!): StoreStats!
+
+    # Admin: all staff and admin users (requires Firebase auth)
+    allStaff: [User!]!
+
+    # Admin: all products for a store (requires Firebase auth)
+    storeProducts(storeId: ID!): [Product!]!
   }
 
   type RazorpayOrder {
@@ -104,9 +145,51 @@ const typeDefs = `#graphql
       razorpaySignature: String!
     ): Order!
 
-    # Update order status — called by store admin (requires Firebase auth)
+    # Update order status — called by dq_staff (requires Firebase auth)
     # Valid statuses: pending → preparing → ready → completed | cancelled
     updateOrderStatus(orderId: ID!, status: String!): Order!
+
+    # Flag an issue on an order — called by dq_staff (requires Firebase auth)
+    # reasons: wrong_items | payment_mismatch | customer_absent | other
+    flagOrderIssue(orderId: ID!, reason: String!, note: String): Order!
+
+    # Admin: store CRUD (requires Firebase auth)
+    createStore(name: String!, address: String!, lat: Float!, lon: Float!): Store!
+    updateStore(id: ID!, name: String, address: String, lat: Float, lon: Float): Store!
+    deleteStore(id: ID!): Boolean!
+
+    # Admin: product CRUD (requires Firebase auth)
+    createProduct(storeId: ID!, barcode: String!, name: String!, description: String, price: Float!, stock: Int!): Product!
+    updateProduct(id: ID!, name: String, description: String, price: Float, stock: Int): Product!
+    deleteProduct(id: ID!): Boolean!
+
+    # Admin: set user role and optional storeId (requires Firebase auth)
+    updateUserRole(userId: ID!, role: String!, storeId: ID): User!
+  }
+
+  type StoreRevenue {
+    store: Store
+    revenue: Float!
+    orderCount: Int!
+  }
+
+  type DashboardStats {
+    totalRevenue: Float!
+    totalOrders: Int!
+    pendingOrders: Int!
+    completedOrders: Int!
+    activeStores: Int!
+    topStores: [StoreRevenue!]!
+    recentOrders: [Order!]!
+  }
+
+  type StoreStats {
+    store: Store
+    totalRevenue: Float!
+    totalOrders: Int!
+    pendingOrders: Int!
+    completedOrders: Int!
+    recentOrders: [Order!]!
   }
 `;
 
