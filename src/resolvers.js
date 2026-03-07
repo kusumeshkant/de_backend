@@ -310,20 +310,20 @@ const resolvers = {
       }
     },
 
-    createProduct: async (_, { storeId, barcode, name, description, price, stock }, context) => {
+    createProduct: async (_, { storeId, barcode, sku, name, description, price, stock }, context) => {
       requireAuth(context);
       try {
-        return await createProduct({ storeId, barcode, name, description, price, stock });
+        return await createProduct({ storeId, barcode, sku, name, description, price, stock });
       } catch (error) {
         logger.error(`createProduct error: ${error.message}`);
         throw error;
       }
     },
 
-    updateProduct: async (_, { id, name, description, price, stock }, context) => {
+    updateProduct: async (_, { id, sku, name, description, price, stock }, context) => {
       requireAuth(context);
       try {
-        return await updateProduct(id, { name, description, price, stock });
+        return await updateProduct(id, { sku, name, description, price, stock });
       } catch (error) {
         logger.error(`updateProduct error: ${error.message}`);
         throw error;
@@ -355,6 +355,7 @@ const resolvers = {
     id: (order) => order._id.toString(),
     createdAt: (order) => order.createdAt.toISOString(),
     storeName: (order) => order._storeName ?? null,
+    storeCode: (order) => order._storeCode ?? null,
     staffActions: (order) =>
       (order.staffActions ?? []).map((a) => ({
         ...a,

@@ -2,6 +2,7 @@ const typeDefs = `#graphql
   type Product {
     id: ID!
     barcode: String!
+    sku: String
     name: String!
     description: String
     price: Float!
@@ -48,6 +49,7 @@ const typeDefs = `#graphql
     id: ID!
     storeId: ID
     storeName: String
+    storeCode: String
     total: Float!
     tax: Float!
     grandTotal: Float!
@@ -163,8 +165,8 @@ const typeDefs = `#graphql
     deleteStore(id: ID!): Boolean!
 
     # Admin: product CRUD (requires Firebase auth)
-    createProduct(storeId: ID!, barcode: String!, name: String!, description: String, price: Float!, stock: Int!): Product!
-    updateProduct(id: ID!, name: String, description: String, price: Float, stock: Int): Product!
+    createProduct(storeId: ID!, barcode: String!, sku: String, name: String!, description: String, price: Float!, stock: Int!): Product!
+    updateProduct(id: ID!, sku: String, name: String, description: String, price: Float, stock: Int): Product!
     deleteProduct(id: ID!): Boolean!
 
     # Admin: set user role and optional storeId (requires Firebase auth)

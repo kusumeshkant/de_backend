@@ -22,6 +22,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal }) {
   // Attach storeName for immediate response
   const store = await Store.findById(storeId);
   order._storeName = store?.name ?? null;
+  order._storeCode = store?.storeCode ?? null;
 
   return order;
 }
@@ -32,10 +33,12 @@ async function getMyOrders(userId) {
   // Attach store names in one query
   const storeIds = [...new Set(orders.map((o) => o.storeId?.toString()).filter(Boolean))];
   const stores = await Store.find({ _id: { $in: storeIds } });
-  const storeMap = Object.fromEntries(stores.map((s) => [s._id.toString(), s.name]));
+  const storeMap = Object.fromEntries(stores.map((s) => [s._id.toString(), s]));
 
   return orders.map((o) => {
-    o._storeName = storeMap[o.storeId?.toString()] ?? null;
+    const store = storeMap[o.storeId?.toString()];
+    o._storeName = store?.name ?? null;
+    o._storeCode = store?.storeCode ?? null;
     return o;
   });
 }
@@ -46,6 +49,7 @@ async function getOrderById(orderId, userId) {
 
   const store = await Store.findById(order.storeId);
   order._storeName = store?.name ?? null;
+  order._storeCode = store?.storeCode ?? null;
 
   return order;
 }
@@ -55,9 +59,11 @@ async function getStoreOrders(storeId) {
 
   const store = await Store.findById(storeId);
   const storeName = store?.name ?? null;
+  const storeCode = store?.storeCode ?? null;
 
   return orders.map((o) => {
     o._storeName = storeName;
+    o._storeCode = storeCode;
     o._userId = o.user;
     return o;
   });
@@ -69,6 +75,7 @@ async function getOrderByIdForStaff(orderId) {
 
   const store = await Store.findById(order.storeId);
   order._storeName = store?.name ?? null;
+  order._storeCode = store?.storeCode ?? null;
   order._userId = order.user;
 
   return order;
@@ -105,6 +112,7 @@ async function updateOrderStatus(orderId, status, staffId, staffName) {
 
   const store = await Store.findById(order.storeId);
   order._storeName = store?.name ?? null;
+  order._storeCode = store?.storeCode ?? null;
   order._userId = order.user;
 
   return order;
@@ -132,6 +140,7 @@ async function flagOrderIssue(orderId, reason, note, staffId, staffName) {
 
   const store = await Store.findById(order.storeId);
   order._storeName = store?.name ?? null;
+  order._storeCode = store?.storeCode ?? null;
   order._userId = order.user;
 
   return order;
@@ -146,10 +155,12 @@ async function getAllOrders({ storeId, status } = {}) {
 
   const storeIds = [...new Set(orders.map((o) => o.storeId?.toString()).filter(Boolean))];
   const stores = await Store.find({ _id: { $in: storeIds } });
-  const storeMap = Object.fromEntries(stores.map((s) => [s._id.toString(), s.name]));
+  const storeMap = Object.fromEntries(stores.map((s) => [s._id.toString(), s]));
 
   return orders.map((o) => {
-    o._storeName = storeMap[o.storeId?.toString()] ?? null;
+    const store = storeMap[o.storeId?.toString()];
+    o._storeName = store?.name ?? null;
+    o._storeCode = store?.storeCode ?? null;
     o._userId = o.user;
     return o;
   });
@@ -194,6 +205,7 @@ async function getDashboardStats() {
     .slice(0, 10)
     .map((o) => {
       o._storeName = storeMap[o.storeId?.toString()]?.name ?? null;
+      o._storeCode = storeMap[o.storeId?.toString()]?.storeCode ?? null;
       o._userId = o.user;
       return o;
     });
@@ -215,6 +227,7 @@ async function getStoreStats(storeId) {
 
   const recentOrders = orders.slice(0, 10).map((o) => {
     o._storeName = store?.name ?? null;
+    o._storeCode = store?.storeCode ?? null;
     o._userId = o.user;
     return o;
   });
