@@ -1,5 +1,5 @@
 const { GraphQLError } = require('graphql');
-const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole } = require('./services/userService');
+const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail } = require('./services/userService');
 const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
@@ -146,6 +146,16 @@ const resolvers = {
       }
     },
 
+    userByEmail: async (_, { email }, context) => {
+      requireAuth(context);
+      try {
+        return await getUserByEmail(email);
+      } catch (error) {
+        logger.error(`userByEmail error: ${error.message}`);
+        throw error;
+      }
+    },
+
     storeProducts: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
@@ -158,11 +168,11 @@ const resolvers = {
   },
 
   Mutation: {
-    updateProfile: async (_, { name }, context) => {
+    updateProfile: async (_, { name, phone, email }, context) => {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        return await updateProfile(user._id, { name });
+        return await updateProfile(user._id, { name, phone, email });
       } catch (error) {
         logger.error(`updateProfile error: ${error.message}`);
         throw error;

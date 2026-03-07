@@ -17,12 +17,16 @@ async function getProfile(userId) {
   return User.findById(userId);
 }
 
-async function updateProfile(userId, { name }) {
-  return User.findByIdAndUpdate(
-    userId,
-    { name },
-    { new: true }
-  );
+async function updateProfile(userId, { name, phone, email }) {
+  const update = {};
+  if (name  !== undefined) update.name  = name;
+  if (phone !== undefined) update.phone = phone;
+  if (email !== undefined) update.email = email;
+  return User.findByIdAndUpdate(userId, update, { new: true });
+}
+
+async function getUserByEmail(email) {
+  return User.findOne({ email });
 }
 
 async function updateFcmToken(userId, fcmToken) {
@@ -39,4 +43,4 @@ async function updateUserRole(userId, role, storeId) {
   return await User.findByIdAndUpdate(userId, update, { new: true });
 }
 
-module.exports = { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole };
+module.exports = { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail };

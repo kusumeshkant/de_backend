@@ -113,6 +113,9 @@ const typeDefs = `#graphql
     # Admin: all staff and admin users (requires Firebase auth)
     allStaff: [User!]!
 
+    # Admin: look up any user by email — used to find and promote a newly registered staff (requires Firebase auth)
+    userByEmail(email: String!): User
+
     # Admin: all products for a store (requires Firebase auth)
     storeProducts(storeId: ID!): [Product!]!
   }
@@ -124,8 +127,8 @@ const typeDefs = `#graphql
   }
 
   type Mutation {
-    # Update user display name (requires Firebase auth)
-    updateProfile(name: String!): User!
+    # Update user profile fields — name, phone, email (requires Firebase auth)
+    updateProfile(name: String, phone: String, email: String): User!
 
     # Register/refresh FCM token for push notifications (requires Firebase auth)
     updateFcmToken(token: String!): Boolean!
