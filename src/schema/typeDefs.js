@@ -31,8 +31,8 @@ const typeDefs = `#graphql
   type StaffAction {
     staffId: String
     staffName: String
-    action: String!
-    timestamp: String!
+    action: String
+    timestamp: String
     note: String
   }
 
