@@ -12,6 +12,7 @@ const typeDefs = `#graphql
 
   type Store {
     id: ID!
+    storeCode: String
     name: String!
     address: String
     imageUrl: String
@@ -157,8 +158,8 @@ const typeDefs = `#graphql
     flagOrderIssue(orderId: ID!, reason: String!, note: String): Order!
 
     # Admin: store CRUD (requires Firebase auth)
-    createStore(name: String!, address: String!, lat: Float!, lon: Float!): Store!
-    updateStore(id: ID!, name: String, address: String, lat: Float, lon: Float): Store!
+    createStore(name: String!, address: String!, lat: Float!, lon: Float!, storeCode: String): Store!
+    updateStore(id: ID!, name: String, address: String, lat: Float, lon: Float, storeCode: String): Store!
     deleteStore(id: ID!): Boolean!
 
     # Admin: product CRUD (requires Firebase auth)

@@ -280,20 +280,20 @@ const resolvers = {
       }
     },
 
-    createStore: async (_, { name, address, lat, lon }, context) => {
+    createStore: async (_, { name, address, lat, lon, storeCode }, context) => {
       requireAuth(context);
       try {
-        return await createStore({ name, address, lat, lon });
+        return await createStore({ name, address, lat, lon, storeCode });
       } catch (error) {
         logger.error(`createStore error: ${error.message}`);
         throw error;
       }
     },
 
-    updateStore: async (_, { id, name, address, lat, lon }, context) => {
+    updateStore: async (_, { id, name, address, lat, lon, storeCode }, context) => {
       requireAuth(context);
       try {
-        return await updateStore(id, { name, address, lat, lon });
+        return await updateStore(id, { name, address, lat, lon, storeCode });
       } catch (error) {
         logger.error(`updateStore error: ${error.message}`);
         throw error;
