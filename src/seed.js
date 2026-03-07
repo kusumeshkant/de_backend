@@ -7,6 +7,7 @@ const Product = require('./models/Product');
 const stores = [
   {
     name: 'Zudio',
+    storeCode: 'ZUD001',
     address: 'Phoenix Marketcity, Whitefield, Bengaluru',
     imageUrl: 'https://picsum.photos/id/1011/500/500',
     latitude: 12.9698,
@@ -14,6 +15,7 @@ const stores = [
   },
   {
     name: 'Zara',
+    storeCode: 'ZAR001',
     address: 'UB City Mall, Vittal Mallya Road, Bengaluru',
     imageUrl: 'https://picsum.photos/id/1015/500/500',
     latitude: 12.9726,
@@ -21,6 +23,7 @@ const stores = [
   },
   {
     name: 'Puma',
+    storeCode: 'PUM001',
     address: '100 Feet Road, Indiranagar, Bengaluru',
     imageUrl: 'https://picsum.photos/id/1016/500/500',
     latitude: 12.9784,
@@ -28,6 +31,7 @@ const stores = [
   },
   {
     name: 'H&M',
+    storeCode: 'HNM001',
     address: 'Orion Mall, Rajajinagar, Bengaluru',
     imageUrl: 'https://picsum.photos/id/1020/500/500',
     latitude: 12.9929,
@@ -35,6 +39,7 @@ const stores = [
   },
   {
     name: 'Westside',
+    storeCode: 'WST001',
     address: 'Forum Mall, Koramangala, Bengaluru',
     imageUrl: 'https://picsum.photos/id/1024/500/500',
     latitude: 12.9352,
@@ -42,6 +47,7 @@ const stores = [
   },
   {
     name: 'Nike',
+    storeCode: 'NKE001',
     address: 'MG Road, Bengaluru',
     imageUrl: 'https://picsum.photos/id/1027/500/500',
     latitude: 12.9716,
