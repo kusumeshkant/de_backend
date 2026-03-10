@@ -17,6 +17,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     status: 'pending',
     razorpayOrderId,
     razorpayPaymentId,
+    paymentStatus: 'success',
   });
 
   await order.save();

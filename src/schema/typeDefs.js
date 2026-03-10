@@ -54,6 +54,7 @@ const typeDefs = `#graphql
     tax: Float!
     grandTotal: Float!
     status: String!
+    paymentStatus: String!
     createdAt: String!
     items: [OrderItem!]!
     staffActions: [StaffAction!]!
