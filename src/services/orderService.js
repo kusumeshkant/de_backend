@@ -2,7 +2,7 @@ const Order = require('../models/Order');
 const Store = require('../models/Store');
 const { ErrorHandler } = require('../utils/errorHandler');
 
-async function createOrder({ userId, storeId, items, total, tax, grandTotal }) {
+async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId }) {
   if (!items || items.length === 0) {
     throw new ErrorHandler('Cart is empty', 400);
   }
@@ -15,6 +15,8 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal }) {
     tax,
     grandTotal,
     status: 'pending',
+    razorpayOrderId,
+    razorpayPaymentId,
   });
 
   await order.save();
