@@ -29,6 +29,11 @@ const resolvers = {
     stores: async (_, __, context) => {
       requireAuth(context);
       try {
+        const user = await getOrCreateUser(context.user);
+        if (user.storeId) {
+          const store = await getStoreById(user.storeId.toString());
+          return store ? [store] : [];
+        }
         return await getStores();
       } catch (error) {
         logger.error(`stores error: ${error.message}`);
@@ -111,7 +116,9 @@ const resolvers = {
     allOrders: async (_, { storeId, status }, context) => {
       requireAuth(context);
       try {
-        return await getAllOrders({ storeId, status });
+        const user = await getOrCreateUser(context.user);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
+        return await getAllOrders({ storeId: effectiveStoreId, status });
       } catch (error) {
         logger.error(`allOrders error: ${error.message}`);
         throw error;
@@ -121,6 +128,21 @@ const resolvers = {
     dashboardStats: async (_, __, context) => {
       requireAuth(context);
       try {
+        const user = await getOrCreateUser(context.user);
+        if (user.storeId) {
+          const stats = await getStoreStats(user.storeId.toString());
+          return {
+            totalRevenue: stats.totalRevenue,
+            totalOrders: stats.totalOrders,
+            pendingOrders: stats.pendingOrders,
+            completedOrders: stats.completedOrders,
+            activeStores: 1,
+            topStores: stats.store
+              ? [{ store: stats.store, revenue: stats.totalRevenue, orderCount: stats.totalOrders }]
+              : [],
+            recentOrders: stats.recentOrders,
+          };
+        }
         return await getDashboardStats();
       } catch (error) {
         logger.error(`dashboardStats error: ${error.message}`);
@@ -141,7 +163,9 @@ const resolvers = {
     allStaff: async (_, __, context) => {
       requireAuth(context);
       try {
-        return await getAllStaff();
+        const user = await getOrCreateUser(context.user);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : null;
+        return await getAllStaff(effectiveStoreId);
       } catch (error) {
         logger.error(`allStaff error: ${error.message}`);
         throw error;

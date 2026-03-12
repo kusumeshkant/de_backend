@@ -33,8 +33,10 @@ async function updateFcmToken(userId, fcmToken) {
   return User.findByIdAndUpdate(userId, { fcmToken }, { new: true });
 }
 
-async function getAllStaff() {
-  return await User.find({ role: { $in: ['staff', 'admin'] } }).sort({ name: 1 });
+async function getAllStaff(storeId = null) {
+  const filter = { role: { $in: ['staff', 'admin'] } };
+  if (storeId) filter.storeId = storeId;
+  return await User.find(filter).sort({ name: 1 });
 }
 
 async function updateUserRole(userId, role, storeId) {
