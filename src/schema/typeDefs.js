@@ -27,6 +27,8 @@ const typeDefs = `#graphql
     name: String!
     price: Float!
     quantity: Int!
+    sku: String
+    description: String
   }
 
   type StaffAction {
@@ -66,6 +68,8 @@ const typeDefs = `#graphql
     name: String!
     price: Float!
     quantity: Int!
+    sku: String
+    description: String
   }
 
   type User {

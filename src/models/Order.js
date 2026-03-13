@@ -5,6 +5,8 @@ const orderItemSchema = new mongoose.Schema({
   name: { type: String, required: true },
   price: { type: Number, required: true },
   quantity: { type: Number, required: true, default: 1 },
+  sku: { type: String },
+  description: { type: String },
 });
 
 const staffActionSchema = new mongoose.Schema({
