@@ -53,7 +53,7 @@ const resolvers = {
     nearbyStores: async (_, { lat, lon }, context) => {
       requireAuth(context);
       try {
-        return await getNearbyStores(lat, lon);
+        return await getNearbyStores(lat, lon, 2);
       } catch (error) {
         logger.error(`nearbyStores error: ${error.message}`);
         throw error;
