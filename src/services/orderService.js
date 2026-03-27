@@ -2,6 +2,7 @@ const Order = require('../models/Order');
 const Store = require('../models/Store');
 const Product = require('../models/Product');
 const { ErrorHandler } = require('../utils/errorHandler');
+const { sendNewOrderToStaff } = require('./notificationService');
 
 async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId }) {
   if (!items || items.length === 0) {
@@ -39,6 +40,14 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
   const store = await Store.findById(storeId);
   order._storeName = store?.name ?? null;
   order._storeCode = store?.storeCode ?? null;
+
+  // Notify all staff of this store (non-blocking)
+  sendNewOrderToStaff(storeId, {
+    orderId: order._id,
+    storeName: store?.name ?? null,
+    itemCount: items.length,
+    grandTotal,
+  }).catch(() => {});
 
   return order;
 }

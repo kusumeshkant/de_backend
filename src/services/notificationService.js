@@ -82,4 +82,24 @@ async function sendOrderStatusUpdate(fcmToken, { status, storeName }) {
   });
 }
 
-module.exports = { sendNotification, sendOrderConfirmation, sendOrderStatusUpdate };
+/**
+ * Sends a new order notification to all staff/admin of a store.
+ */
+async function sendNewOrderToStaff(storeId, { orderId, storeName, itemCount, grandTotal }) {
+  const User = require('../models/User');
+  const staffUsers = await User.find({
+    storeId,
+    role: { $in: ['staff', 'admin'] },
+    fcmToken: { $ne: null },
+  });
+
+  await Promise.all(staffUsers.map((u) =>
+    sendNotification(u.fcmToken, {
+      title: `New Order — ${storeName ?? 'Store'}`,
+      body: `${itemCount} item${itemCount !== 1 ? 's' : ''} · ₹${Math.round(grandTotal)}`,
+      data: { type: 'new_order', orderId: orderId.toString() },
+    })
+  ));
+}
+
+module.exports = { sendNotification, sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff };
