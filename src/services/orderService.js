@@ -1,5 +1,6 @@
 const Order = require('../models/Order');
 const Store = require('../models/Store');
+const Product = require('../models/Product');
 const { ErrorHandler } = require('../utils/errorHandler');
 
 async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId }) {
@@ -21,6 +22,18 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
   });
 
   await order.save();
+
+  // Decrement stock for each ordered item
+  for (const item of items) {
+    const product = await Product.findOne({ barcode: item.barcode, storeId });
+    if (!product) continue;
+
+    const newStock = Math.max(0, product.stock - (item.quantity ?? 1));
+    const update = { stock: newStock };
+    if (newStock === 0) update.isAvailable = false;
+
+    await Product.findByIdAndUpdate(product._id, update);
+  }
 
   // Attach storeName for immediate response
   const store = await Store.findById(storeId);
