@@ -384,7 +384,7 @@ const resolvers = {
     storeCode: (order) => order._storeCode ?? null,
     staffActions: (order) =>
       (order.staffActions ?? []).map((a) => ({
-        ...a,
+        ...a.toObject(),
         timestamp: a.timestamp instanceof Date ? a.timestamp.toISOString() : a.timestamp,
       })),
     flaggedIssue: (order) => {
