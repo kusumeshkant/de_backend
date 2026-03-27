@@ -3,7 +3,7 @@ const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff,
 const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
-const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats } = require('./services/orderService');
+const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
 const logger = require('./utils/logger');
 
@@ -188,6 +188,16 @@ const resolvers = {
         return await getStoreProducts(storeId);
       } catch (error) {
         logger.error(`storeProducts error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    validateCartStock: async (_, { storeId, items }, context) => {
+      requireAuth(context);
+      try {
+        return await validateCartStock(storeId, items);
+      } catch (error) {
+        logger.error(`validateCartStock error: ${error.message}`);
         throw error;
       }
     },

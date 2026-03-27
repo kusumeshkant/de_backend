@@ -144,6 +144,9 @@ const typeDefs = `#graphql
 
     # Admin: all products for a store (requires Firebase auth)
     storeProducts(storeId: ID!): [Product!]!
+
+    # Check stock availability before payment — returns names of out-of-stock items (requires Firebase auth)
+    validateCartStock(storeId: ID!, items: [OrderItemInput!]!): [String!]!
   }
 
   type RazorpayOrder {

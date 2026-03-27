@@ -260,6 +260,17 @@ async function getStoreStats(storeId) {
   return { store, totalRevenue, totalOrders, pendingOrders, completedOrders, recentOrders };
 }
 
+async function validateCartStock(storeId, items) {
+  const outOfStock = [];
+  for (const item of items) {
+    const product = await Product.findOne({ barcode: item.barcode, storeId });
+    if (!product || !product.isAvailable || product.stock < (item.quantity ?? 1)) {
+      outOfStock.push(item.name || item.barcode);
+    }
+  }
+  return outOfStock;
+}
+
 module.exports = {
   createOrder,
   getMyOrders,
@@ -271,4 +282,5 @@ module.exports = {
   getAllOrders,
   getDashboardStats,
   getStoreStats,
+  validateCartStock,
 };
