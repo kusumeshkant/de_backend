@@ -1,14 +1,32 @@
 const typeDefs = `#graphql
+  type ProductCategory {
+    main: String
+    sub: String
+  }
+
+  type ProductSize {
+    garment: String
+    actual: String
+  }
+
   type Product {
     id: ID!
     barcode: String!
     sku: String
+    storeId: ID
     name: String!
     description: String
-    price: Float!
+    brand: String
+    gender: String
+    color: String
     imageUrl: String
+    category: ProductCategory
+    size: ProductSize
+    mrp: Float!
+    price: Float!
     stock: Int!
-    storeId: ID
+    reorderLevel: Int
+    isAvailable: Boolean
   }
 
   type Store {
@@ -170,8 +188,42 @@ const typeDefs = `#graphql
     deleteStore(id: ID!): Boolean!
 
     # Admin: product CRUD (requires Firebase auth)
-    createProduct(storeId: ID!, barcode: String!, sku: String, name: String!, description: String, price: Float!, stock: Int!): Product!
-    updateProduct(id: ID!, sku: String, name: String, description: String, price: Float, stock: Int): Product!
+    createProduct(
+      storeId: ID!
+      barcode: String!
+      sku: String
+      name: String!
+      description: String
+      brand: String
+      gender: String
+      color: String
+      categoryMain: String
+      categorySub: String
+      sizeGarment: String
+      sizeActual: String
+      mrp: Float!
+      price: Float!
+      stock: Int!
+      reorderLevel: Int
+    ): Product!
+    updateProduct(
+      id: ID!
+      sku: String
+      name: String
+      description: String
+      brand: String
+      gender: String
+      color: String
+      categoryMain: String
+      categorySub: String
+      sizeGarment: String
+      sizeActual: String
+      mrp: Float
+      price: Float
+      stock: Int
+      reorderLevel: Int
+      isAvailable: Boolean
+    ): Product!
     deleteProduct(id: ID!): Boolean!
 
     # Admin: set user role and optional storeId (requires Firebase auth)
