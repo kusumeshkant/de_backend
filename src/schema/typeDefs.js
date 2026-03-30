@@ -155,6 +155,35 @@ const typeDefs = `#graphql
     currency: String!
   }
 
+  # ── Bulk Upload ──────────────────────────────────────────────────────────────
+
+  input BulkProductInput {
+    barcode:      String!
+    sku:          String
+    name:         String!
+    brand:        String
+    gender:       String
+    color:        String
+    categoryMain: String
+    categorySub:  String
+    sizeGarment:  String
+    sizeActual:   String
+    mrp:          Float
+    price:        Float!
+    stock:        Int!
+  }
+
+  type BulkProductError {
+    barcode: String!
+    message: String!
+  }
+
+  type BulkUpsertResult {
+    created: Int!
+    updated: Int!
+    errors:  [BulkProductError!]!
+  }
+
   type Mutation {
     # Update user profile fields — name, phone, email (requires Firebase auth)
     updateProfile(name: String, phone: String, email: String): User!
@@ -228,6 +257,10 @@ const typeDefs = `#graphql
       isAvailable: Boolean
     ): Product!
     deleteProduct(id: ID!): Boolean!
+
+    # Admin: bulk upsert products from Excel upload (requires Firebase auth)
+    # Upserts by barcode within the store — creates new or updates existing
+    bulkUpsertProducts(storeId: ID!, products: [BulkProductInput!]!): BulkUpsertResult!
 
     # Admin: set user role and optional storeId (requires Firebase auth)
     updateUserRole(userId: ID!, role: String!, storeId: ID): User!

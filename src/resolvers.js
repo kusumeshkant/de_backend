@@ -1,7 +1,7 @@
 const { GraphQLError } = require('graphql');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail } = require('./services/userService');
 const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService');
-const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct } = require('./services/productService');
+const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
 const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
@@ -346,22 +346,32 @@ const resolvers = {
       }
     },
 
-    createProduct: async (_, { storeId, barcode, sku, name, description, price, stock }, context) => {
+    createProduct: async (_, { storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel }, context) => {
       requireAuth(context);
       try {
-        return await createProduct({ storeId, barcode, sku, name, description, price, stock });
+        return await createProduct({ storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel });
       } catch (error) {
         logger.error(`createProduct error: ${error.message}`);
         throw error;
       }
     },
 
-    updateProduct: async (_, { id, sku, name, description, price, stock }, context) => {
+    updateProduct: async (_, { id, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel, isAvailable }, context) => {
       requireAuth(context);
       try {
-        return await updateProduct(id, { sku, name, description, price, stock });
+        return await updateProduct(id, { sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel, isAvailable });
       } catch (error) {
         logger.error(`updateProduct error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    bulkUpsertProducts: async (_, { storeId, products }, context) => {
+      requireAuth(context);
+      try {
+        return await bulkUpsertProducts(storeId, products);
+      } catch (error) {
+        logger.error(`bulkUpsertProducts error: ${error.message}`);
         throw error;
       }
     },
