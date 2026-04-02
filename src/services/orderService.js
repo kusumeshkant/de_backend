@@ -294,6 +294,33 @@ async function getStoreAnalytics(storeId) {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
+  // Avg items per completed order
+  const totalItemsAcrossOrders = completedOrders.reduce((s, o) => s + o.items.reduce((si, i) => si + (i.quantity ?? 1), 0), 0);
+  const avgItemsPerOrder = completedOrders.length > 0 ? totalItemsAcrossOrders / completedOrders.length : 0;
+
+  // Total units sold
+  const totalUnitsSold = Object.values(productMap).reduce((s, p) => s + p.totalSold, 0);
+
+  // Week-over-week comparison
+  const now = new Date();
+  const startOfThisWeek = new Date(now);
+  startOfThisWeek.setDate(now.getDate() - now.getDay());
+  startOfThisWeek.setHours(0, 0, 0, 0);
+  const startOfLastWeek = new Date(startOfThisWeek);
+  startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+
+  const thisWeekRevenue = completedOrders
+    .filter((o) => o.createdAt >= startOfThisWeek)
+    .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+  const lastWeekRevenue = completedOrders
+    .filter((o) => o.createdAt >= startOfLastWeek && o.createdAt < startOfThisWeek)
+    .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+
+  // Low stock count — products with stock <= 5
+  const lowStockFilter = { stock: { $gt: 0, $lte: 5 } };
+  if (storeId) lowStockFilter.storeId = storeId;
+  const lowStockCount = await Product.countDocuments(lowStockFilter);
+
   // Daily revenue — last 30 days
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -314,6 +341,11 @@ async function getStoreAnalytics(storeId) {
     completedOrders: completedOrders.length,
     cancelledOrders,
     avgOrderValue,
+    avgItemsPerOrder,
+    totalUnitsSold,
+    thisWeekRevenue,
+    lastWeekRevenue,
+    lowStockCount,
     topProducts,
     dailyRevenue,
   };

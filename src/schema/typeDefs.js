@@ -307,6 +307,11 @@ const typeDefs = `#graphql
     completedOrders: Int!
     cancelledOrders: Int!
     avgOrderValue: Float!
+    avgItemsPerOrder: Float!
+    totalUnitsSold: Int!
+    thisWeekRevenue: Float!
+    lastWeekRevenue: Float!
+    lowStockCount: Int!
     topProducts: [ProductStat!]!
     dailyRevenue: [DailyRevenueStat!]!
   }
