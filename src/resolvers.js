@@ -1,7 +1,7 @@
 const { GraphQLError } = require('graphql');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail } = require('./services/userService');
 const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService');
-const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts } = require('./services/productService');
+const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
 const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
@@ -201,6 +201,23 @@ const resolvers = {
         throw error;
       }
     },
+
+    uploadLogs: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const logs = await getUploadLogs(storeId);
+        return logs.map((l) => ({
+          ...l,
+          id: l._id.toString(),
+          storeId: l.storeId?.toString(),
+          uploadedBy: l.uploadedBy?.toString() ?? null,
+          uploadedAt: l.createdAt?.toISOString(),
+        }));
+      } catch (error) {
+        logger.error(`uploadLogs error: ${error.message}`);
+        throw error;
+      }
+    },
   },
 
   Mutation: {
@@ -366,10 +383,17 @@ const resolvers = {
       }
     },
 
-    bulkUpsertProducts: async (_, { storeId, products }, context) => {
+    bulkUpsertProducts: async (_, { storeId, products, fileName, totalRows, totalColumns }, context) => {
       requireAuth(context);
       try {
-        return await bulkUpsertProducts(storeId, products);
+        const user = await getOrCreateUser(context.user);
+        return await bulkUpsertProducts(storeId, products, {
+          fileName,
+          totalRows,
+          totalColumns,
+          uploadedBy: user._id,
+          uploadedByName: user.name ?? context.user.email ?? 'Unknown',
+        });
       } catch (error) {
         logger.error(`bulkUpsertProducts error: ${error.message}`);
         throw error;

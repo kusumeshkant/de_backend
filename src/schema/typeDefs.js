@@ -147,6 +147,7 @@ const typeDefs = `#graphql
 
     # Check stock availability before payment — returns names of out-of-stock items (requires Firebase auth)
     validateCartStock(storeId: ID!, items: [OrderItemInput!]!): [String!]!
+    uploadLogs(storeId: ID!): [UploadLog!]!
   }
 
   type RazorpayOrder {
@@ -179,9 +180,27 @@ const typeDefs = `#graphql
   }
 
   type BulkUpsertResult {
-    created: Int!
-    updated: Int!
-    errors:  [BulkProductError!]!
+    created:  Int!
+    updated:  Int!
+    skipped:  Int!
+    errors:   [BulkProductError!]!
+  }
+
+  type UploadLog {
+    id:             ID!
+    storeId:        ID!
+    storeName:      String
+    uploadedBy:     ID
+    uploadedByName: String!
+    fileName:       String!
+    uploadedAt:     String!
+    totalRows:      Int!
+    totalColumns:   Int!
+    created:        Int!
+    updated:        Int!
+    skipped:        Int!
+    errorCount:     Int!
+    errors:         [BulkProductError!]!
   }
 
   type Mutation {
@@ -260,7 +279,7 @@ const typeDefs = `#graphql
 
     # Admin: bulk upsert products from Excel upload (requires Firebase auth)
     # Upserts by barcode within the store — creates new or updates existing
-    bulkUpsertProducts(storeId: ID!, products: [BulkProductInput!]!): BulkUpsertResult!
+    bulkUpsertProducts(storeId: ID!, products: [BulkProductInput!]!, fileName: String, totalRows: Int, totalColumns: Int): BulkUpsertResult!
 
     # Admin: set user role and optional storeId (requires Firebase auth)
     updateUserRole(userId: ID!, role: String!, storeId: ID): User!

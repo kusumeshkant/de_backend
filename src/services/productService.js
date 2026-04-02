@@ -1,4 +1,6 @@
 const Product = require('../models/Product');
+const UploadLog = require('../models/UploadLog');
+const Store = require('../models/Store');
 
 async function getProductByBarcode(barcode, storeId) {
   return await Product.findOne({ barcode, storeId });
@@ -65,14 +67,15 @@ async function deleteProduct(id) {
 // Upsert by barcode within a store:
 //   - barcode exists in this store → update all fields
 //   - barcode not found            → create new product
-async function bulkUpsertProducts(storeId, products) {
+async function bulkUpsertProducts(storeId, products, { fileName, totalRows, totalColumns, uploadedBy, uploadedByName } = {}) {
   let created = 0;
   let updated = 0;
+  let skipped = 0;
   const errors = [];
 
   for (const p of products) {
     // Skip products with zero stock — no point adding items that are out of stock
-    if ((p.stock ?? 0) === 0) continue;
+    if ((p.stock ?? 0) === 0) { skipped++; continue; }
     try {
       const filter = { barcode: p.barcode, storeId };
       const update = {
@@ -107,7 +110,30 @@ async function bulkUpsertProducts(storeId, products) {
     }
   }
 
-  return { created, updated, errors };
+  // Save upload log
+  try {
+    const store = await Store.findById(storeId).lean();
+    await UploadLog.create({
+      storeId,
+      storeName: store?.name ?? null,
+      uploadedBy:     uploadedBy ?? null,
+      uploadedByName: uploadedByName ?? 'Unknown',
+      fileName:       fileName ?? 'unknown.xlsx',
+      totalRows:      totalRows ?? products.length,
+      totalColumns:   totalColumns ?? 0,
+      created,
+      updated,
+      skipped,
+      errorCount: errors.length,
+      errors,
+    });
+  } catch (_) { /* log save failure should not break the upload */ }
+
+  return { created, updated, skipped, errors };
 }
 
-module.exports = { getProductByBarcode, getProducts, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts };
+async function getUploadLogs(storeId) {
+  return await UploadLog.find({ storeId }).sort({ createdAt: -1 }).limit(50).lean();
+}
+
+module.exports = { getProductByBarcode, getProducts, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs };
