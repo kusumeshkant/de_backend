@@ -9,7 +9,7 @@ async function getProducts() {
 }
 
 async function getStoreProducts(storeId) {
-  return await Product.find({ storeId }).sort({ name: 1 });
+  return await Product.find({ storeId, stock: { $gt: 0 } }).sort({ name: 1 });
 }
 
 async function createProduct({ storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel }) {
@@ -49,6 +49,11 @@ async function updateProduct(id, { sku, name, description, brand, gender, color,
   if (stock !== undefined)         update.stock = stock;
   if (reorderLevel !== undefined)  update.reorderLevel = reorderLevel;
   if (isAvailable !== undefined)   update.isAvailable = isAvailable;
+
+  // If stock is being set to 0, delete the product and return last state
+  if (stock === 0) {
+    return await Product.findByIdAndDelete(id);
+  }
   return await Product.findByIdAndUpdate(id, update, { new: true });
 }
 
@@ -66,6 +71,8 @@ async function bulkUpsertProducts(storeId, products) {
   const errors = [];
 
   for (const p of products) {
+    // Skip products with zero stock — no point adding items that are out of stock
+    if ((p.stock ?? 0) === 0) continue;
     try {
       const filter = { barcode: p.barcode, storeId };
       const update = {

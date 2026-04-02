@@ -30,10 +30,11 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     if (!product) continue;
 
     const newStock = Math.max(0, product.stock - (item.quantity ?? 1));
-    const update = { stock: newStock };
-    if (newStock === 0) update.isAvailable = false;
-
-    await Product.findByIdAndUpdate(product._id, update);
+    if (newStock === 0) {
+      await Product.findByIdAndDelete(product._id);
+    } else {
+      await Product.findByIdAndUpdate(product._id, { stock: newStock });
+    }
   }
 
   // Attach storeName for immediate response
