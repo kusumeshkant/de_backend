@@ -1,11 +1,11 @@
 const { GraphQLError } = require('graphql');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail } = require('./services/userService');
-const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService');
+const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
 const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
-const logger = require('./utils/logger');
+const logger = require('./utils/logger_cf');
 
 function requireAuth(context) {
   if (!context.user) {

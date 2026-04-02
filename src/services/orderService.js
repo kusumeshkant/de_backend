@@ -2,7 +2,7 @@ const Order = require('../models/Order');
 const Store = require('../models/Store');
 const Product = require('../models/Product');
 const { ErrorHandler } = require('../utils/errorHandler');
-const { sendNewOrderToStaff } = require('./notificationService');
+const { sendNewOrderToStaff } = require('./notificationService_cf');
 
 async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId }) {
   if (!items || items.length === 0) {

@@ -6,10 +6,14 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "build:worker": "node build-worker.mjs",
+    "deploy": "node build-worker.mjs && wrangler deploy",
+    "worker:dev": "node build-worker.mjs && wrangler dev --no-bundle"
   },
   "dependencies": {
-    "@apollo/server": "^5.4.0",
+    "@apollo/server": "^4.11.0",
+    "@as-integrations/cloudflare-workers": "^1.1.1",
     "dotenv": "^17.2.3",
     "firebase-admin": "^13.7.0",
     "graphql": "^16.6.0",
@@ -18,6 +22,8 @@
     "winston": "^3.10.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.0"
+    "esbuild": "^0.27.7",
+    "nodemon": "^3.0.0",
+    "wrangler": "^4.80.0"
   }
 }

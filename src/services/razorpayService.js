@@ -1,13 +1,30 @@
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+// Lazy-initialized so CF Workers secrets (injected via env, not process.env)
+// are available before the first call. setEnv() is called in worker.js.
+let _keyId = null;
+let _keySecret = null;
+let _razorpay = null;
+
+function setRazorpayEnv(env) {
+  _keyId = env.RAZORPAY_KEY_ID;
+  _keySecret = env.RAZORPAY_KEY_SECRET;
+  _razorpay = null; // reset so it is re-created with new keys if called again
+}
+
+function getRazorpay() {
+  // Fallback to process.env for local Node.js dev
+  const keyId = _keyId || process.env.RAZORPAY_KEY_ID;
+  const keySecret = _keySecret || process.env.RAZORPAY_KEY_SECRET;
+  if (!_razorpay) {
+    _razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+  }
+  return _razorpay;
+}
 
 async function createRazorpayOrder(amount) {
-  const order = await razorpay.orders.create({
+  const order = await getRazorpay().orders.create({
     amount: Math.round(amount * 100), // convert to paise
     currency: 'INR',
     receipt: `receipt_${Date.now()}`,
@@ -16,12 +33,13 @@ async function createRazorpayOrder(amount) {
 }
 
 function verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature) {
+  const keySecret = _keySecret || process.env.RAZORPAY_KEY_SECRET;
   const body = `${razorpayOrderId}|${razorpayPaymentId}`;
   const expectedSignature = crypto
-    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+    .createHmac('sha256', keySecret)
     .update(body)
     .digest('hex');
   return expectedSignature === razorpaySignature;
 }
 
-module.exports = { createRazorpayOrder, verifyPayment };
+module.exports = { setRazorpayEnv, createRazorpayOrder, verifyPayment };
