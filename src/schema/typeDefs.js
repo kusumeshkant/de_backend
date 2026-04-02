@@ -148,6 +148,9 @@ const typeDefs = `#graphql
     # Check stock availability before payment — returns names of out-of-stock items (requires Firebase auth)
     validateCartStock(storeId: ID!, items: [OrderItemInput!]!): [String!]!
     uploadLogs(storeId: ID!): [UploadLog!]!
+
+    # Store-level analytics — top products, daily revenue, KPIs (requires Firebase auth)
+    storeAnalytics(storeId: ID): StoreAnalytics!
   }
 
   type RazorpayOrder {
@@ -283,6 +286,29 @@ const typeDefs = `#graphql
 
     # Admin: set user role and optional storeId (requires Firebase auth)
     updateUserRole(userId: ID!, role: String!, storeId: ID): User!
+  }
+
+  type ProductStat {
+    name: String!
+    barcode: String!
+    totalSold: Int!
+    revenue: Float!
+  }
+
+  type DailyRevenueStat {
+    date: String!
+    revenue: Float!
+    orders: Int!
+  }
+
+  type StoreAnalytics {
+    totalRevenue: Float!
+    totalOrders: Int!
+    completedOrders: Int!
+    cancelledOrders: Int!
+    avgOrderValue: Float!
+    topProducts: [ProductStat!]!
+    dailyRevenue: [DailyRevenueStat!]!
   }
 
   type StoreRevenue {

@@ -261,6 +261,64 @@ async function getStoreStats(storeId) {
   return { store, totalRevenue, totalOrders, pendingOrders, completedOrders, recentOrders };
 }
 
+async function getStoreAnalytics(storeId) {
+  const completedFilter = { status: 'completed' };
+  const allFilter = {};
+  if (storeId) {
+    completedFilter.storeId = storeId;
+    allFilter.storeId = storeId;
+  }
+
+  const [completedOrders, allOrders] = await Promise.all([
+    Order.find(completedFilter),
+    Order.find(allFilter),
+  ]);
+
+  const totalRevenue = completedOrders.reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+  const totalOrders = allOrders.length;
+  const cancelledOrders = allOrders.filter((o) => o.status === 'cancelled').length;
+  const avgOrderValue = completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0;
+
+  // Top products by revenue (from completed orders)
+  const productMap = {};
+  for (const order of completedOrders) {
+    for (const item of order.items) {
+      if (!productMap[item.barcode]) {
+        productMap[item.barcode] = { name: item.name, barcode: item.barcode, totalSold: 0, revenue: 0 };
+      }
+      productMap[item.barcode].totalSold += item.quantity ?? 1;
+      productMap[item.barcode].revenue += (item.price ?? 0) * (item.quantity ?? 1);
+    }
+  }
+  const topProducts = Object.values(productMap)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10);
+
+  // Daily revenue — last 30 days
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const recentCompleted = completedOrders.filter((o) => o.createdAt >= thirtyDaysAgo);
+
+  const dailyMap = {};
+  for (const order of recentCompleted) {
+    const date = order.createdAt.toISOString().slice(0, 10);
+    if (!dailyMap[date]) dailyMap[date] = { date, revenue: 0, orders: 0 };
+    dailyMap[date].revenue += order.grandTotal ?? 0;
+    dailyMap[date].orders += 1;
+  }
+  const dailyRevenue = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    totalRevenue,
+    totalOrders,
+    completedOrders: completedOrders.length,
+    cancelledOrders,
+    avgOrderValue,
+    topProducts,
+    dailyRevenue,
+  };
+}
+
 async function validateCartStock(storeId, items) {
   const outOfStock = [];
   for (const item of items) {
@@ -284,4 +342,5 @@ module.exports = {
   getDashboardStats,
   getStoreStats,
   validateCartStock,
+  getStoreAnalytics,
 };
