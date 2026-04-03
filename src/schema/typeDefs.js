@@ -255,7 +255,7 @@ const typeDefs = `#graphql
       categorySub: String
       sizeGarment: String
       sizeActual: String
-      mrp: Float!
+      mrp: Float
       price: Float!
       stock: Int!
       reorderLevel: Int
