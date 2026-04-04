@@ -1,5 +1,6 @@
 const { GraphQLError } = require('graphql');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail } = require('./services/userService');
+const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
@@ -172,6 +173,36 @@ const resolvers = {
       }
     },
 
+    storeStaff: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        return await getStoreStaff(storeId);
+      } catch (error) {
+        logger.error(`storeStaff error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    pendingInvites: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        return await getPendingInvites(storeId);
+      } catch (error) {
+        logger.error(`pendingInvites error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    validateInviteToken: async (_, { token }, context) => {
+      requireAuth(context);
+      try {
+        return await validateInviteToken(token);
+      } catch (error) {
+        logger.error(`validateInviteToken error: ${error.message}`);
+        throw error;
+      }
+    },
+
     userByEmail: async (_, { email }, context) => {
       requireAuth(context);
       try {
@@ -233,6 +264,21 @@ const resolvers = {
   },
 
   Mutation: {
+    registerAdmin: async (_, __, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        // Only set admin if user has no role yet (fresh signup) or is still customer
+        if (!user.role || user.role === 'customer') {
+          return await updateUserRole(user._id, 'admin', null);
+        }
+        return user;
+      } catch (error) {
+        logger.error(`registerAdmin error: ${error.message}`);
+        throw error;
+      }
+    },
+
     updateProfile: async (_, { name, phone, email }, context) => {
       requireAuth(context);
       try {
@@ -428,6 +474,61 @@ const resolvers = {
         return await updateUserRole(userId, role, storeId);
       } catch (error) {
         logger.error(`updateUserRole error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    inviteStaff: async (_, { email, name, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        const Store = require('./models/Store');
+        const store = await Store.findById(storeId);
+        return await inviteStaff({ email, name, storeId, storeName: store?.name ?? 'Your Store' });
+      } catch (error) {
+        logger.error(`inviteStaff error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    bulkInviteStaff: async (_, { invites, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const Store = require('./models/Store');
+        const store = await Store.findById(storeId);
+        return await bulkInviteStaff({ invites, storeId, storeName: store?.name ?? 'Your Store' });
+      } catch (error) {
+        logger.error(`bulkInviteStaff error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    cancelInvite: async (_, { inviteId }, context) => {
+      requireAuth(context);
+      try {
+        return await cancelInvite(inviteId);
+      } catch (error) {
+        logger.error(`cancelInvite error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    removeStaff: async (_, { userId }, context) => {
+      requireAuth(context);
+      try {
+        return await removeStaff(userId);
+      } catch (error) {
+        logger.error(`removeStaff error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    acceptInvite: async (_, { token }, context) => {
+      requireAuth(context);
+      try {
+        return await acceptInvite({ token, uid: context.user.uid });
+      } catch (error) {
+        logger.error(`acceptInvite error: ${error.message}`);
         throw error;
       }
     },

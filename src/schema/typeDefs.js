@@ -99,6 +99,22 @@ const typeDefs = `#graphql
     storeId: ID
   }
 
+  type StaffInvite {
+    id: ID!
+    email: String!
+    name: String!
+    storeId: ID!
+    storeName: String
+    token: String!
+    expiresAt: String!
+    used: Boolean!
+  }
+
+  input StaffInviteInput {
+    email: String!
+    name: String!
+  }
+
   type Query {
     # Used by scanner — look up a product by barcode within a specific store's inventory
     productByBarcode(barcode: String!, storeId: ID!): Product
@@ -138,6 +154,15 @@ const typeDefs = `#graphql
 
     # Admin: all staff and admin users (requires Firebase auth)
     allStaff: [User!]!
+
+    # Admin: staff members for a specific store (requires Firebase auth)
+    storeStaff(storeId: ID!): [User!]!
+
+    # Admin: pending (unused, non-expired) invites for a store (requires Firebase auth)
+    pendingInvites(storeId: ID!): [StaffInvite!]!
+
+    # dq_staff: validate an invite code before accepting (requires Firebase auth)
+    validateInviteToken(token: String!): StaffInvite!
 
     # Admin: look up any user by email — used to find and promote a newly registered staff (requires Firebase auth)
     userByEmail(email: String!): User
@@ -207,6 +232,9 @@ const typeDefs = `#graphql
   }
 
   type Mutation {
+    # Admin self-registration — sets role to admin on first signup via dq_admin app
+    registerAdmin: User!
+
     # Update user profile fields — name, phone, email (requires Firebase auth)
     updateProfile(name: String, phone: String, email: String): User!
 
@@ -286,6 +314,21 @@ const typeDefs = `#graphql
 
     # Admin: set user role and optional storeId (requires Firebase auth)
     updateUserRole(userId: ID!, role: String!, storeId: ID): User!
+
+    # Admin: invite a staff member by email — sends invite email with code (requires Firebase auth)
+    inviteStaff(email: String!, name: String!, storeId: ID!): StaffInvite!
+
+    # Admin: bulk invite staff from Excel upload (requires Firebase auth)
+    bulkInviteStaff(invites: [StaffInviteInput!]!, storeId: ID!): [StaffInvite!]!
+
+    # Admin: cancel a pending invite (requires Firebase auth)
+    cancelInvite(inviteId: ID!): Boolean!
+
+    # Admin: remove staff from store — resets role to customer (requires Firebase auth)
+    removeStaff(userId: ID!): Boolean!
+
+    # dq_staff: accept an invite code — links staff to store (requires Firebase auth)
+    acceptInvite(token: String!): User!
   }
 
   type ProductStat {
