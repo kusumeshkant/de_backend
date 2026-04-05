@@ -2,17 +2,24 @@
  * FCM push notifications using firebase-admin SDK.
  * firebase-admin is already initialized in middleware/auth.js
  */
-const admin = require('firebase-admin');
 const User = require('../models/User');
 
 function getMessaging() {
+  // Require firebase-admin lazily so it's already initialized by auth.js
+  const admin = require('firebase-admin');
+  if (!admin.apps.length) {
+    console.warn('[FCM] firebase-admin not initialized yet');
+    return null;
+  }
   return admin.messaging();
 }
 
 async function sendNotification(fcmToken, { title, body, data = {} }) {
   if (!fcmToken) return;
+  const messaging = getMessaging();
+  if (!messaging) return;
   try {
-    await getMessaging().send({
+    await messaging.send({
       token: fcmToken,
       notification: { title, body },
       data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
