@@ -1,7 +1,7 @@
 const { GraphQLError } = require('graphql');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
-const { sendOrderConfirmation, sendOrderStatusUpdate } = require('./services/notificationService_cf');
+const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
 const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics } = require('./services/orderService');
@@ -333,10 +333,18 @@ const resolvers = {
         });
         logger.info(`Order created: ${order._id}`);
 
-        // Send push notification (non-blocking)
+        // Notify customer (non-blocking)
         sendOrderConfirmation(user.fcmToken, {
           grandTotal: order.grandTotal,
           storeName: order._storeName,
+        }).catch(() => {});
+
+        // Notify all staff of new order (non-blocking)
+        sendNewOrderToStaff(order.storeId, {
+          orderId: order._id,
+          storeName: order._storeName,
+          itemCount: order.items?.length ?? 1,
+          grandTotal: order.grandTotal,
         }).catch(() => {});
 
         return order;
