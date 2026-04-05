@@ -108,17 +108,24 @@ async function inviteStaff({ email, name, storeId, storeName }) {
 
   const invite = await StaffInvite.create({ email, name, storeId, storeName, token, expiresAt });
 
-  // Fire-and-forget email — do NOT await, so the invite returns immediately
-  const transporter = getTransporter();
-  const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
-  transporter.sendMail({
-    from: `"DQ Store" <${process.env.GMAIL_USER}>`,
-    to: email,
-    subject,
-    html,
-  }).catch(err => {
-    console.error('Invite email failed (invite still created):', err.message);
-  });
+  // Only attempt email if Gmail credentials are configured
+  const gmailConfigured = process.env.GMAIL_APP_PASSWORD &&
+    process.env.GMAIL_APP_PASSWORD !== 'your_gmail_app_password_here';
+
+  if (gmailConfigured) {
+    const transporter = getTransporter();
+    const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
+    transporter.sendMail({
+      from: `"DQ Store" <${process.env.GMAIL_USER}>`,
+      to: email,
+      subject,
+      html,
+    }).catch(err => {
+      console.error('Invite email failed (invite still created):', err.message);
+    });
+  } else {
+    console.log(`[Invite] Email skipped (Gmail not configured). Token for ${email}: ${token}`);
+  }
 
   return invite;
 }
