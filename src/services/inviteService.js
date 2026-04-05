@@ -107,7 +107,7 @@ async function inviteStaff({ email, name, storeId, storeName }) {
     const resend = getResend();
     const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
     resend.emails.send({
-      from: 'DQ Store <onboarding@resend.dev>',
+      from: 'DQ Store <noreply@dqstore.in>',
       to: email,
       subject,
       html,
