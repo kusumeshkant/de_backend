@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 
 const productSchema = new mongoose.Schema({
   // ── Identification ──────────────────────────────
-  barcode:     { type: String, required: true, unique: true },
-  sku:         { type: String, unique: true, sparse: true },
+  barcode:     { type: String, required: true },
+  sku:         { type: String, sparse: true },
   storeId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Store' },
 
   // ── Basic Info ──────────────────────────────────
@@ -36,5 +36,10 @@ const productSchema = new mongoose.Schema({
   isAvailable:  { type: Boolean, default: true },
 
 }, { timestamps: true });
+
+// Barcode is unique per store, not globally
+productSchema.index({ barcode: 1, storeId: 1 }, { unique: true });
+// SKU is unique per store when provided
+productSchema.index({ sku: 1, storeId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Product', productSchema);

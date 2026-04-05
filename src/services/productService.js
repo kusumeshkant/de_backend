@@ -84,7 +84,7 @@ async function bulkUpsertProducts(storeId, products, { fileName, totalRows, tota
         sku:     p.sku     || undefined,
         name:    p.name,
         brand:   p.brand,
-        gender:  p.gender,
+        gender:  p.gender ? (p.gender.charAt(0).toUpperCase() + p.gender.slice(1).toLowerCase()) : undefined,
         color:   p.color,
         'category.main': p.categoryMain,
         'category.sub':  p.categorySub,
