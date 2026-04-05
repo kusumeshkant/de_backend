@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const StaffInvite = require('../models/StaffInvite');
 const User = require('../models/User');
 
@@ -11,15 +11,9 @@ function generateInviteCode() {
   return `DQ-${part(4)}-${part(4)}`;
 }
 
-// ── Gmail transporter ─────────────────────────────────────────────────────────
-function getTransporter() {
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, ''),
-    },
-  });
+// ── Resend client ─────────────────────────────────────────────────────────────
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY);
 }
 
 // ── Email template ────────────────────────────────────────────────────────────
@@ -108,24 +102,19 @@ async function inviteStaff({ email, name, storeId, storeName }) {
 
   const invite = await StaffInvite.create({ email, name, storeId, storeName, token, expiresAt });
 
-  // Only attempt email if Gmail credentials are configured
-  const pwd = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, '');
-  const gmailConfigured = pwd && pwd !== 'your_gmail_app_password_here';
-  console.log(`[Invite] Gmail configured: ${gmailConfigured}, pwd length: ${pwd.length}`);
-
-  if (gmailConfigured) {
-    const transporter = getTransporter();
+  // Send via Resend (fire-and-forget)
+  if (process.env.RESEND_API_KEY) {
+    const resend = getResend();
     const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
-    transporter.sendMail({
-      from: `"DQ Store" <${process.env.GMAIL_USER}>`,
+    resend.emails.send({
+      from: 'DQ Store <onboarding@resend.dev>',
       to: email,
       subject,
       html,
-    }).catch(err => {
-      console.error('Invite email failed (invite still created):', err.message);
-    });
+    }).then(r => console.log(`[Invite] Email sent to ${email}:`, r.id))
+      .catch(err => console.error('[Invite] Email failed:', err.message));
   } else {
-    console.log(`[Invite] Email skipped (Gmail not configured). Token for ${email}: ${token}`);
+    console.log(`[Invite] Resend not configured. Token for ${email}: ${token}`);
   }
 
   return invite;
