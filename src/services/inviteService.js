@@ -17,7 +17,7 @@ function getTransporter() {
     service: 'gmail',
     auth: {
       user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,  // App Password from Google Account settings
+      pass: (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, ''),
     },
   });
 }
@@ -109,8 +109,9 @@ async function inviteStaff({ email, name, storeId, storeName }) {
   const invite = await StaffInvite.create({ email, name, storeId, storeName, token, expiresAt });
 
   // Only attempt email if Gmail credentials are configured
-  const gmailConfigured = process.env.GMAIL_APP_PASSWORD &&
-    process.env.GMAIL_APP_PASSWORD !== 'your_gmail_app_password_here';
+  const pwd = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s/g, '');
+  const gmailConfigured = pwd && pwd !== 'your_gmail_app_password_here';
+  console.log(`[Invite] Gmail configured: ${gmailConfigured}, pwd length: ${pwd.length}`);
 
   if (gmailConfigured) {
     const transporter = getTransporter();
