@@ -39,7 +39,7 @@ const productSchema = new mongoose.Schema({
 
 // Barcode is unique per store, not globally
 productSchema.index({ barcode: 1, storeId: 1 }, { unique: true });
-// SKU is unique per store when provided
-productSchema.index({ sku: 1, storeId: 1 }, { unique: true, sparse: true });
+// SKU is not unique — one style code maps to many variants (sizes/colors)
+productSchema.index({ sku: 1, storeId: 1 });
 
 module.exports = mongoose.model('Product', productSchema);

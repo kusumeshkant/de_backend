@@ -108,19 +108,17 @@ async function inviteStaff({ email, name, storeId, storeName }) {
 
   const invite = await StaffInvite.create({ email, name, storeId, storeName, token, expiresAt });
 
-  // Send email (non-blocking — don't fail the invite if email fails)
-  try {
-    const transporter = getTransporter();
-    const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
-    await transporter.sendMail({
-      from: `"DQ Store" <${process.env.GMAIL_USER}>`,
-      to: email,
-      subject,
-      html,
-    });
-  } catch (err) {
+  // Fire-and-forget email — do NOT await, so the invite returns immediately
+  const transporter = getTransporter();
+  const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
+  transporter.sendMail({
+    from: `"DQ Store" <${process.env.GMAIL_USER}>`,
+    to: email,
+    subject,
+    html,
+  }).catch(err => {
     console.error('Invite email failed (invite still created):', err.message);
-  }
+  });
 
   return invite;
 }
