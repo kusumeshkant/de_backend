@@ -7,14 +7,9 @@ const typeDefs = require('./schema/typeDefs');
 const resolvers = require('./resolvers');
 const { verifyToken } = require('./middleware/auth');
 const logger = require('./utils/logger');
-const { setEnv } = require('./services/notificationService_cf');
-
 const startServer = async () => {
   try {
     if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
-
-    // Provide env vars to the CF-compatible notification service
-    setEnv(process.env);
 
     await mongoose.connect(process.env.MONGO_URI);
     logger.info('Connected to MongoDB');
