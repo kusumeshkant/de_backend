@@ -194,6 +194,9 @@ const typeDefs = `#graphql
 
     # Customer LTV projection — avg spend, order frequency, active lifespan, top 10 customers (requires Firebase auth)
     customerLTV(storeId: ID): CustomerLTVStats!
+
+    # Monthly revenue breakdown for a given year — 12 months returned always (requires Firebase auth)
+    monthlyRevenue(storeId: ID, year: Int): [MonthlyRevenueStat!]!
   }
 
   type RazorpayOrder {
@@ -428,6 +431,13 @@ const typeDefs = `#graphql
     totalOrdersHandled: Int!
     avgFulfillmentTime: Float
     cancellationRate: Float!
+  }
+
+  type MonthlyRevenueStat {
+    month: Int!
+    year: Int!
+    revenue: Float!
+    orders: Int!
   }
 
   type CustomerRetentionStats {

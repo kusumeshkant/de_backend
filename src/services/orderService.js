@@ -759,6 +759,32 @@ async function getCustomerLTV(storeId) {
   };
 }
 
+// ── Monthly Revenue Export ────────────────────────────────────────────────────
+async function getMonthlyRevenue(storeId, year) {
+  const targetYear = year || new Date().getFullYear();
+  const start = new Date(`${targetYear}-01-01T00:00:00.000Z`);
+  const end   = new Date(`${targetYear + 1}-01-01T00:00:00.000Z`);
+
+  const filter = { status: 'completed', createdAt: { $gte: start, $lt: end } };
+  if (storeId) filter.storeId = storeId;
+
+  const orders = await Order.find(filter).select('grandTotal createdAt');
+
+  // Aggregate into month buckets (1–12)
+  const buckets = {};
+  for (let m = 1; m <= 12; m++) {
+    buckets[m] = { month: m, year: targetYear, revenue: 0, orders: 0 };
+  }
+
+  for (const order of orders) {
+    const month = new Date(order.createdAt).getUTCMonth() + 1;
+    buckets[month].revenue += order.grandTotal || 0;
+    buckets[month].orders  += 1;
+  }
+
+  return Object.values(buckets);
+}
+
 module.exports = {
   createOrder,
   getMyOrders,
@@ -776,4 +802,5 @@ module.exports = {
   getStaffPerformance,
   getBasketAbandonmentStats,
   getCustomerLTV,
+  getMonthlyRevenue,
 };
