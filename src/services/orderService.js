@@ -1,6 +1,7 @@
 const Order = require('../models/Order');
 const Store = require('../models/Store');
 const Product = require('../models/Product');
+const CartCheckEvent = require('../models/CartCheckEvent');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
 
@@ -24,6 +25,14 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
   });
 
   await order.save();
+
+  // Mark the most recent cart check event for this user+store as converted (non-blocking)
+  const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000);
+  CartCheckEvent.findOneAndUpdate(
+    { userId, storeId, converted: false, createdAt: { $gte: sixtyMinutesAgo } },
+    { converted: true, convertedOrderId: order._id },
+    { sort: { createdAt: -1 } }
+  ).catch(() => {});
 
   // Decrement stock for each ordered item
   for (const item of items) {
@@ -471,7 +480,7 @@ async function getStoreAnalytics(storeId) {
   };
 }
 
-async function validateCartStock(storeId, items) {
+async function validateCartStock(storeId, items, userId = null) {
   const outOfStock = [];
   for (const item of items) {
     const product = await Product.findOne({ barcode: item.barcode, storeId });
@@ -479,7 +488,63 @@ async function validateCartStock(storeId, items) {
       outOfStock.push(item.name || item.barcode);
     }
   }
+
+  // Log cart check event for abandonment tracking (non-blocking)
+  if (userId) {
+    const estimatedTotal = items.reduce((s, i) => s + (i.price ?? 0) * (i.quantity ?? 1), 0);
+    CartCheckEvent.create({
+      userId,
+      storeId,
+      itemCount: items.length,
+      estimatedTotal,
+    }).catch(() => {});
+  }
+
   return outOfStock;
+}
+
+async function getBasketAbandonmentStats(storeId) {
+  const filter = {};
+  if (storeId) filter.storeId = storeId;
+
+  const [total, converted] = await Promise.all([
+    CartCheckEvent.countDocuments(filter),
+    CartCheckEvent.countDocuments({ ...filter, converted: true }),
+  ]);
+
+  const abandoned        = total - converted;
+  const abandonmentRate  = total > 0 ? (abandoned / total) * 100 : 0;
+  const conversionRate   = total > 0 ? (converted / total) * 100 : 0;
+
+  // This week vs last week abandonment
+  const now = new Date();
+  const startOfThisWeek = new Date(now);
+  startOfThisWeek.setDate(now.getDate() - now.getDay());
+  startOfThisWeek.setHours(0, 0, 0, 0);
+  const startOfLastWeek = new Date(startOfThisWeek);
+  startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+
+  const [thisWeekTotal, thisWeekConverted, lastWeekTotal, lastWeekConverted] = await Promise.all([
+    CartCheckEvent.countDocuments({ ...filter, createdAt: { $gte: startOfThisWeek } }),
+    CartCheckEvent.countDocuments({ ...filter, converted: true, createdAt: { $gte: startOfThisWeek } }),
+    CartCheckEvent.countDocuments({ ...filter, createdAt: { $gte: startOfLastWeek, $lt: startOfThisWeek } }),
+    CartCheckEvent.countDocuments({ ...filter, converted: true, createdAt: { $gte: startOfLastWeek, $lt: startOfThisWeek } }),
+  ]);
+
+  const thisWeekAbandonmentRate = thisWeekTotal > 0
+    ? ((thisWeekTotal - thisWeekConverted) / thisWeekTotal) * 100 : 0;
+  const lastWeekAbandonmentRate = lastWeekTotal > 0
+    ? ((lastWeekTotal - lastWeekConverted) / lastWeekTotal) * 100 : 0;
+
+  return {
+    totalChecks:           total,
+    convertedChecks:       converted,
+    abandonedChecks:       abandoned,
+    abandonmentRate,
+    conversionRate,
+    thisWeekAbandonmentRate,
+    lastWeekAbandonmentRate,
+  };
 }
 
 async function getStaffPerformance(storeId) {
@@ -624,4 +689,5 @@ module.exports = {
   getStoreAnalytics,
   getCustomerRetention,
   getStaffPerformance,
+  getBasketAbandonmentStats,
 };

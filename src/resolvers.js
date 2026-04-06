@@ -4,7 +4,7 @@ const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStor
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
-const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance } = require('./services/orderService');
+const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
 const logger = require('./utils/logger_cf');
 
@@ -252,7 +252,8 @@ const resolvers = {
     validateCartStock: async (_, { storeId, items }, context) => {
       requireAuth(context);
       try {
-        return await validateCartStock(storeId, items);
+        const user = await getOrCreateUser(context.user);
+        return await validateCartStock(storeId, items, user._id);
       } catch (error) {
         logger.error(`validateCartStock error: ${error.message}`);
         throw error;
@@ -267,6 +268,21 @@ const resolvers = {
         return await getStoreAnalytics(effectiveStoreId);
       } catch (error) {
         logger.error(`storeAnalytics error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    basketAbandonment: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        if (!hasRole(user, 'admin')) {
+          throw new GraphQLError('Not authorized', { extensions: { code: 'FORBIDDEN' } });
+        }
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
+        return await getBasketAbandonmentStats(effectiveStoreId);
+      } catch (error) {
+        logger.error(`basketAbandonment error: ${error.message}`);
         throw error;
       }
     },

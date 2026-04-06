@@ -188,6 +188,9 @@ const typeDefs = `#graphql
 
     # Staff performance — orders completed, cancellations, flags, avg fulfillment time per staff member
     staffPerformance(storeId: ID): [StaffPerformanceStat!]!
+
+    # Basket abandonment — cart checks that never converted to an order (requires Firebase auth)
+    basketAbandonment(storeId: ID): BasketAbandonmentStats!
   }
 
   type RazorpayOrder {
@@ -401,6 +404,16 @@ const typeDefs = `#graphql
     peakDays: [DayStat!]!
     avgDiscountDepth: Float
     topDiscountedProducts: [DiscountedProduct!]!
+  }
+
+  type BasketAbandonmentStats {
+    totalChecks: Int!
+    convertedChecks: Int!
+    abandonedChecks: Int!
+    abandonmentRate: Float!
+    conversionRate: Float!
+    thisWeekAbandonmentRate: Float!
+    lastWeekAbandonmentRate: Float!
   }
 
   type StaffPerformanceStat {
