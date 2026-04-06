@@ -102,6 +102,10 @@ const resolvers = {
     storeOrders: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
+        const user = await getOrCreateUser(context.user);
+        if (!hasRole(user, 'staff', 'admin')) {
+          throw new GraphQLError('Not authorized', { extensions: { code: 'FORBIDDEN' } });
+        }
         return await getStoreOrders(storeId);
       } catch (error) {
         logger.error(`storeOrders error: ${error.message}`);
@@ -137,6 +141,17 @@ const resolvers = {
         const user = await getOrCreateUser(context.user);
         if (user.storeId) {
           const stats = await getStoreStats(user.storeId.toString());
+          const now = new Date();
+          const startOfThisWeek = new Date(now);
+          startOfThisWeek.setDate(now.getDate() - now.getDay());
+          startOfThisWeek.setHours(0, 0, 0, 0);
+          const startOfLastWeek = new Date(startOfThisWeek);
+          startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+          const thisWeekOrders = stats.recentOrders.filter((o) => new Date(o.createdAt) >= startOfThisWeek).length;
+          const lastWeekOrders = stats.recentOrders.filter((o) => {
+            const d = new Date(o.createdAt);
+            return d >= startOfLastWeek && d < startOfThisWeek;
+          }).length;
           return {
             totalRevenue: stats.totalRevenue,
             totalOrders: stats.totalOrders,
@@ -147,6 +162,12 @@ const resolvers = {
               ? [{ store: stats.store, revenue: stats.totalRevenue, orderCount: stats.totalOrders }]
               : [],
             recentOrders: stats.recentOrders,
+            thisWeekOrders,
+            lastWeekOrders,
+            orderGrowthRate: lastWeekOrders > 0 ? ((thisWeekOrders - lastWeekOrders) / lastWeekOrders) * 100 : null,
+            thisWeekRevenue: 0,
+            lastWeekRevenue: 0,
+            revenueGrowthRate: null,
           };
         }
         return await getDashboardStats();
@@ -357,6 +378,7 @@ const resolvers = {
           userId: user._id,
           razorpayOrderId,
           razorpayPaymentId,
+          razorpaySignature,
           ...orderArgs,
         });
         logger.info(`Order created: ${order._id}`);
@@ -386,6 +408,17 @@ const resolvers = {
       requireAuth(context);
       try {
         const staffUser = await getOrCreateUser(context.user);
+        if (!hasRole(staffUser, 'staff', 'admin')) {
+          throw new GraphQLError('Not authorized', { extensions: { code: 'FORBIDDEN' } });
+        }
+        // Staff can only update orders belonging to their own store
+        if (staffUser.storeId) {
+          const Order = require('./models/Order');
+          const existingOrder = await Order.findById(orderId);
+          if (!existingOrder || existingOrder.storeId?.toString() !== staffUser.storeId.toString()) {
+            throw new GraphQLError('Order does not belong to your store', { extensions: { code: 'FORBIDDEN' } });
+          }
+        }
         const order = await updateOrderStatus(
           orderId,
           status,
@@ -437,10 +470,10 @@ const resolvers = {
       }
     },
 
-    updateStore: async (_, { id, name, address, lat, lon, storeCode }, context) => {
+    updateStore: async (_, { id, name, address, lat, lon, storeCode, isActive }, context) => {
       requireAuth(context);
       try {
-        return await updateStore(id, { name, address, lat, lon, storeCode });
+        return await updateStore(id, { name, address, lat, lon, storeCode, isActive });
       } catch (error) {
         logger.error(`updateStore error: ${error.message}`);
         throw error;
@@ -450,6 +483,10 @@ const resolvers = {
     deleteStore: async (_, { id }, context) => {
       requireAuth(context);
       try {
+        const user = await getOrCreateUser(context.user);
+        if (!hasRole(user, 'admin')) {
+          throw new GraphQLError('Not authorized', { extensions: { code: 'FORBIDDEN' } });
+        }
         return await deleteStore(id);
       } catch (error) {
         logger.error(`deleteStore error: ${error.message}`);
@@ -497,6 +534,10 @@ const resolvers = {
     deleteProduct: async (_, { id }, context) => {
       requireAuth(context);
       try {
+        const user = await getOrCreateUser(context.user);
+        if (!hasRole(user, 'admin')) {
+          throw new GraphQLError('Not authorized', { extensions: { code: 'FORBIDDEN' } });
+        }
         return await deleteProduct(id);
       } catch (error) {
         logger.error(`deleteProduct error: ${error.message}`);
@@ -573,6 +614,8 @@ const resolvers = {
   Order: {
     id: (order) => order._id.toString(),
     createdAt: (order) => order.createdAt.toISOString(),
+    completedAt: (order) => order.completedAt?.toISOString() ?? null,
+    cancelledAt: (order) => order.cancelledAt?.toISOString() ?? null,
     storeName: (order) => order._storeName ?? null,
     storeCode: (order) => order._storeCode ?? null,
     staffActions: (order) =>

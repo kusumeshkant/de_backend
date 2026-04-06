@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const orderItemSchema = new mongoose.Schema({
   barcode: { type: String, required: true },
   name: { type: String, required: true },
+  mrp: { type: Number },
   price: { type: Number, required: true },
   quantity: { type: Number, required: true, default: 1 },
   sku: { type: String },
@@ -39,6 +40,7 @@ const orderSchema = new mongoose.Schema({
   },
   razorpayOrderId: { type: String },
   razorpayPaymentId: { type: String },
+  razorpaySignature: { type: String },
   paymentStatus: {
     type: String,
     enum: ['pending', 'success', 'failed'],
@@ -47,6 +49,8 @@ const orderSchema = new mongoose.Schema({
   staffActions: { type: [staffActionSchema], default: [] },
   flaggedIssue: { type: flaggedIssueSchema, default: null },
   createdAt: { type: Date, default: Date.now },
+  completedAt: { type: Date, default: null },
+  cancelledAt: { type: Date, default: null },
 });
 
 module.exports = mongoose.model('Order', orderSchema);

@@ -37,12 +37,14 @@ const typeDefs = `#graphql
     imageUrl: String
     latitude: Float
     longitude: Float
+    isActive: Boolean
     distanceKm: Float
   }
 
   type OrderItem {
     barcode: String!
     name: String!
+    mrp: Float
     price: Float!
     quantity: Int!
     sku: String
@@ -79,11 +81,14 @@ const typeDefs = `#graphql
     items: [OrderItem!]!
     staffActions: [StaffAction!]!
     flaggedIssue: FlaggedIssue
+    completedAt: String
+    cancelledAt: String
   }
 
   input OrderItemInput {
     barcode: String!
     name: String!
+    mrp: Float
     price: Float!
     quantity: Int!
     sku: String
@@ -273,7 +278,7 @@ const typeDefs = `#graphql
 
     # Admin: store CRUD (requires Firebase auth)
     createStore(name: String!, address: String!, lat: Float!, lon: Float!, storeCode: String): Store!
-    updateStore(id: ID!, name: String, address: String, lat: Float, lon: Float, storeCode: String): Store!
+    updateStore(id: ID!, name: String, address: String, lat: Float, lon: Float, storeCode: String, isActive: Boolean): Store!
     deleteStore(id: ID!): Boolean!
 
     # Admin: product CRUD (requires Firebase auth)
@@ -351,6 +356,19 @@ const typeDefs = `#graphql
     orders: Int!
   }
 
+  type HourStat {
+    hour: Int!
+    orders: Int!
+    revenue: Float!
+  }
+
+  type DayStat {
+    day: String!
+    dayIndex: Int!
+    orders: Int!
+    revenue: Float!
+  }
+
   type StoreAnalytics {
     totalRevenue: Float!
     totalOrders: Int!
@@ -364,6 +382,10 @@ const typeDefs = `#graphql
     lowStockCount: Int!
     topProducts: [ProductStat!]!
     dailyRevenue: [DailyRevenueStat!]!
+    avgFulfillmentTime: Float
+    avgFulfillmentTimeToday: Float
+    peakHours: [HourStat!]!
+    peakDays: [DayStat!]!
   }
 
   type StoreRevenue {
@@ -380,6 +402,12 @@ const typeDefs = `#graphql
     activeStores: Int!
     topStores: [StoreRevenue!]!
     recentOrders: [Order!]!
+    thisWeekOrders: Int!
+    lastWeekOrders: Int!
+    orderGrowthRate: Float
+    thisWeekRevenue: Float!
+    lastWeekRevenue: Float!
+    revenueGrowthRate: Float
   }
 
   type StoreStats {

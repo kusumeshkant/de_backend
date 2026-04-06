@@ -4,7 +4,7 @@ const Product = require('../models/Product');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
 
-async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId }) {
+async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
   if (!items || items.length === 0) {
     throw new ErrorHandler('Cart is empty', 400);
   }
@@ -19,6 +19,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     status: 'pending',
     razorpayOrderId,
     razorpayPaymentId,
+    razorpaySignature,
     paymentStatus: 'success',
   });
 
@@ -123,10 +124,15 @@ async function updateOrderStatus(orderId, status, staffId, staffName) {
 
   const action = STATUS_ACTION_MAP[status] || status;
 
+  const timestampUpdate = {};
+  if (status === 'completed') timestampUpdate.completedAt = new Date();
+  if (status === 'cancelled') timestampUpdate.cancelledAt = new Date();
+
   const order = await Order.findByIdAndUpdate(
     orderId,
     {
       status,
+      ...timestampUpdate,
       $push: {
         staffActions: { staffId, staffName, action, timestamp: new Date() },
       },
@@ -236,7 +242,46 @@ async function getDashboardStats() {
       return o;
     });
 
-  return { totalRevenue, totalOrders, pendingOrders, completedOrders, activeStores, topStores, recentOrders };
+  // Week-over-week order growth
+  const now = new Date();
+  const startOfThisWeek = new Date(now);
+  startOfThisWeek.setDate(now.getDate() - now.getDay());
+  startOfThisWeek.setHours(0, 0, 0, 0);
+  const startOfLastWeek = new Date(startOfThisWeek);
+  startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+
+  const thisWeekOrders = orders.filter((o) => o.createdAt >= startOfThisWeek).length;
+  const lastWeekOrders = orders.filter((o) => o.createdAt >= startOfLastWeek && o.createdAt < startOfThisWeek).length;
+  const orderGrowthRate = lastWeekOrders > 0
+    ? ((thisWeekOrders - lastWeekOrders) / lastWeekOrders) * 100
+    : null;
+
+  // Week-over-week revenue growth (platform level)
+  const thisWeekRevenue = orders
+    .filter((o) => o.status === 'completed' && o.createdAt >= startOfThisWeek)
+    .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+  const lastWeekRevenue = orders
+    .filter((o) => o.status === 'completed' && o.createdAt >= startOfLastWeek && o.createdAt < startOfThisWeek)
+    .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+  const revenueGrowthRate = lastWeekRevenue > 0
+    ? ((thisWeekRevenue - lastWeekRevenue) / lastWeekRevenue) * 100
+    : null;
+
+  return {
+    totalRevenue,
+    totalOrders,
+    pendingOrders,
+    completedOrders,
+    activeStores,
+    topStores,
+    recentOrders,
+    thisWeekOrders,
+    lastWeekOrders,
+    orderGrowthRate,
+    thisWeekRevenue,
+    lastWeekRevenue,
+    revenueGrowthRate,
+  };
 }
 
 async function getStoreStats(storeId) {
@@ -335,6 +380,45 @@ async function getStoreAnalytics(storeId) {
   }
   const dailyRevenue = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
 
+  // Peak hours — all orders grouped by hour of day (0–23)
+  const hourMap = {};
+  for (let h = 0; h < 24; h++) hourMap[h] = { hour: h, orders: 0, revenue: 0 };
+  for (const order of allOrders) {
+    const h = new Date(order.createdAt).getHours();
+    hourMap[h].orders += 1;
+    if (order.status === 'completed') hourMap[h].revenue += order.grandTotal ?? 0;
+  }
+  const peakHours = Object.values(hourMap);
+
+  // Peak days — all orders grouped by day of week (0=Sun … 6=Sat)
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayMap = {};
+  for (let d = 0; d < 7; d++) dayMap[d] = { day: DAY_NAMES[d], dayIndex: d, orders: 0, revenue: 0 };
+  for (const order of allOrders) {
+    const d = new Date(order.createdAt).getDay();
+    dayMap[d].orders += 1;
+    if (order.status === 'completed') dayMap[d].revenue += order.grandTotal ?? 0;
+  }
+  const peakDays = Object.values(dayMap);
+
+  // Avg fulfillment time — orders that have both createdAt and completedAt
+  const ordersWithFulfillment = completedOrders.filter((o) => o.completedAt && o.createdAt);
+  const avgFulfillmentTime = ordersWithFulfillment.length > 0
+    ? ordersWithFulfillment.reduce((s, o) => s + (o.completedAt - o.createdAt), 0)
+      / ordersWithFulfillment.length
+      / 1000 / 60  // ms → minutes
+    : null;
+
+  // Avg fulfillment time — today only
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todayFulfilled = ordersWithFulfillment.filter((o) => o.completedAt >= startOfToday);
+  const avgFulfillmentTimeToday = todayFulfilled.length > 0
+    ? todayFulfilled.reduce((s, o) => s + (o.completedAt - o.createdAt), 0)
+      / todayFulfilled.length
+      / 1000 / 60
+    : null;
+
   return {
     totalRevenue,
     totalOrders,
@@ -348,6 +432,10 @@ async function getStoreAnalytics(storeId) {
     lowStockCount,
     topProducts,
     dailyRevenue,
+    avgFulfillmentTime,
+    avgFulfillmentTimeToday,
+    peakHours,
+    peakDays,
   };
 }
 

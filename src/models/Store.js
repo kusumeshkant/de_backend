@@ -7,6 +7,7 @@ const storeSchema = new mongoose.Schema({
   imageUrl: { type: String },
   latitude: { type: Number },
   longitude: { type: Number },
+  isActive: { type: Boolean, default: true },
   created_at: { type: Date, default: Date.now },
 });
 

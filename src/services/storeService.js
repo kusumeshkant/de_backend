@@ -1,7 +1,7 @@
 const Store = require('../models/Store');
 
 async function getStores() {
-  return await Store.find().sort({ name: 1 });
+  return await Store.find({ isActive: true }).sort({ name: 1 });
 }
 
 async function getStoreById(id) {
@@ -16,7 +16,7 @@ async function getStoreById(id) {
  * @param {number} radiusKm  Max radius — pass Infinity to return all stores sorted by distance
  */
 async function getNearbyStores(lat, lon, radiusKm = Infinity) {
-  const stores = await Store.find();
+  const stores = await Store.find({ isActive: true });
   return stores
     .map((store) => {
       const obj = store.toObject();
@@ -75,13 +75,14 @@ async function createStore({ name, address, lat, lon, storeCode }) {
   return await store.save();
 }
 
-async function updateStore(id, { name, address, lat, lon, storeCode }) {
+async function updateStore(id, { name, address, lat, lon, storeCode, isActive }) {
   const update = {};
   if (name !== undefined) update.name = name;
   if (address !== undefined) update.address = address;
   if (lat !== undefined) update.latitude = lat;
   if (lon !== undefined) update.longitude = lon;
   if (storeCode !== undefined) update.storeCode = storeCode.trim().toUpperCase();
+  if (isActive !== undefined) update.isActive = isActive;
   return await Store.findByIdAndUpdate(id, update, { new: true });
 }
 
