@@ -21,7 +21,7 @@ async function connectDB() {
 }
 
 // ── Apollo Server (created once, reused across invocations) ──────────────────
-const server = new ApolloServer({ typeDefs, resolvers });
+const server = new ApolloServer({ typeDefs, resolvers, introspection: true });
 
 const apolloHandler = startServerAndCreateNextHandler(server, {
   context: async (req) => {
