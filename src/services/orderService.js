@@ -401,6 +401,36 @@ async function getStoreAnalytics(storeId) {
   }
   const peakDays = Object.values(dayMap);
 
+  // Discount depth — per product and overall, only where mrp > 0 and mrp > price
+  const discountMap = {};
+  for (const order of completedOrders) {
+    for (const item of order.items) {
+      if (!item.mrp || item.mrp <= 0 || item.mrp <= item.price) continue;
+      const depth = ((item.mrp - item.price) / item.mrp) * 100;
+      const key   = item.barcode;
+      if (!discountMap[key]) {
+        discountMap[key] = { name: item.name, barcode: key, depths: [], totalSold: 0 };
+      }
+      discountMap[key].depths.push(depth);
+      discountMap[key].totalSold += item.quantity ?? 1;
+    }
+  }
+
+  const allDepths = Object.values(discountMap).flatMap((p) => p.depths);
+  const avgDiscountDepth = allDepths.length > 0
+    ? allDepths.reduce((s, d) => s + d, 0) / allDepths.length
+    : null;
+
+  const topDiscountedProducts = Object.values(discountMap)
+    .map((p) => ({
+      name:          p.name,
+      barcode:       p.barcode,
+      avgDiscount:   p.depths.reduce((s, d) => s + d, 0) / p.depths.length,
+      totalSold:     p.totalSold,
+    }))
+    .sort((a, b) => b.avgDiscount - a.avgDiscount)
+    .slice(0, 10);
+
   // Avg fulfillment time — orders that have both createdAt and completedAt
   const ordersWithFulfillment = completedOrders.filter((o) => o.completedAt && o.createdAt);
   const avgFulfillmentTime = ordersWithFulfillment.length > 0
@@ -436,6 +466,8 @@ async function getStoreAnalytics(storeId) {
     avgFulfillmentTimeToday,
     peakHours,
     peakDays,
+    avgDiscountDepth,
+    topDiscountedProducts,
   };
 }
 

@@ -362,6 +362,13 @@ const typeDefs = `#graphql
     orders: Int!
   }
 
+  type DiscountedProduct {
+    name: String!
+    barcode: String!
+    avgDiscount: Float!
+    totalSold: Int!
+  }
+
   type HourStat {
     hour: Int!
     orders: Int!
@@ -392,6 +399,8 @@ const typeDefs = `#graphql
     avgFulfillmentTimeToday: Float
     peakHours: [HourStat!]!
     peakDays: [DayStat!]!
+    avgDiscountDepth: Float
+    topDiscountedProducts: [DiscountedProduct!]!
   }
 
   type StaffPerformanceStat {
