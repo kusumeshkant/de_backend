@@ -23,12 +23,24 @@ async function connectDB() {
 // ── Apollo Server (created once, reused across invocations) ──────────────────
 const server = new ApolloServer({ typeDefs, resolvers });
 
-const handler = startServerAndCreateNextHandler(server, {
+const apolloHandler = startServerAndCreateNextHandler(server, {
   context: async (req) => {
     await connectDB();
     const user = await verifyToken(req);
     return { user };
   },
 });
+
+// Wrap handler to inject CORS headers (allows Apollo Studio + Flutter apps)
+async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  return apolloHandler(req, res);
+}
 
 module.exports = handler;
