@@ -2,6 +2,7 @@ const Order = require('../models/Order');
 const Store = require('../models/Store');
 const Product = require('../models/Product');
 const CartCheckEvent = require('../models/CartCheckEvent');
+const User = require('../models/User');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
 
@@ -674,6 +675,90 @@ async function getCustomerRetention(storeId) {
   };
 }
 
+// ── Customer LTV Projection ───────────────────────────────────────────────────
+async function getCustomerLTV(storeId) {
+  const filter = { status: 'completed' };
+  if (storeId) filter.storeId = storeId;
+
+  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 });
+
+  if (orders.length === 0) {
+    return {
+      totalCustomers: 0,
+      avgRevenuePerCustomer: 0,
+      avgOrdersPerCustomer: 0,
+      avgDaysActive: null,
+      projectedMonthlyLTV: null,
+      topCustomers: [],
+    };
+  }
+
+  // Group by userId
+  const customerMap = {}; // uid → { revenue, orders: [Date], firstOrder, lastOrder }
+  for (const order of orders) {
+    const uid = order.user.toString();
+    if (!customerMap[uid]) {
+      customerMap[uid] = { revenue: 0, orderDates: [], userId: uid };
+    }
+    customerMap[uid].revenue += order.grandTotal || 0;
+    customerMap[uid].orderDates.push(new Date(order.createdAt));
+  }
+
+  const customers = Object.values(customerMap);
+  const totalCustomers = customers.length;
+
+  const totalRevenue = customers.reduce((s, c) => s + c.revenue, 0);
+  const totalOrderCount = customers.reduce((s, c) => s + c.orderDates.length, 0);
+
+  const avgRevenuePerCustomer = totalRevenue / totalCustomers;
+  const avgOrdersPerCustomer  = totalOrderCount / totalCustomers;
+
+  // avgDaysActive: avg span (lastOrder - firstOrder) for customers with 2+ orders
+  const returningCustomers = customers.filter((c) => c.orderDates.length >= 2);
+  let avgDaysActive = null;
+  if (returningCustomers.length > 0) {
+    const spans = returningCustomers.map((c) => {
+      const first = c.orderDates[0];
+      const last  = c.orderDates[c.orderDates.length - 1];
+      return (last - first) / (1000 * 60 * 60 * 24);
+    });
+    avgDaysActive = spans.reduce((s, d) => s + d, 0) / spans.length;
+  }
+
+  // projectedMonthlyLTV — only meaningful when we have avgDaysActive > 0
+  const projectedMonthlyLTV =
+    avgDaysActive && avgDaysActive > 0
+      ? (avgRevenuePerCustomer / avgDaysActive) * 30
+      : null;
+
+  // Top 10 customers by revenue — look up names from User collection
+  const sorted = customers.sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  const userIds = sorted.map((c) => c.userId);
+  const users   = await User.find({ _id: { $in: userIds } }).select('_id name phone');
+  const userLookup = {};
+  for (const u of users) userLookup[u._id.toString()] = u;
+
+  const topCustomers = sorted.map((c) => {
+    const u = userLookup[c.userId];
+    return {
+      userId:      c.userId,
+      name:        u?.name  || 'Unknown',
+      phone:       u?.phone || null,
+      totalSpend:  c.revenue,
+      totalOrders: c.orderDates.length,
+    };
+  });
+
+  return {
+    totalCustomers,
+    avgRevenuePerCustomer,
+    avgOrdersPerCustomer,
+    avgDaysActive,
+    projectedMonthlyLTV,
+    topCustomers,
+  };
+}
+
 module.exports = {
   createOrder,
   getMyOrders,
@@ -690,4 +775,5 @@ module.exports = {
   getCustomerRetention,
   getStaffPerformance,
   getBasketAbandonmentStats,
+  getCustomerLTV,
 };

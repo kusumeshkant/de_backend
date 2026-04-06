@@ -191,6 +191,9 @@ const typeDefs = `#graphql
 
     # Basket abandonment — cart checks that never converted to an order (requires Firebase auth)
     basketAbandonment(storeId: ID): BasketAbandonmentStats!
+
+    # Customer LTV projection — avg spend, order frequency, active lifespan, top 10 customers (requires Firebase auth)
+    customerLTV(storeId: ID): CustomerLTVStats!
   }
 
   type RazorpayOrder {
@@ -434,6 +437,23 @@ const typeDefs = `#graphql
     avgRepeatIntervalDays: Float
     newCustomersThisWeek: Int!
     newCustomersLastWeek: Int!
+  }
+
+  type TopCustomerStat {
+    userId: String!
+    name: String!
+    phone: String
+    totalSpend: Float!
+    totalOrders: Int!
+  }
+
+  type CustomerLTVStats {
+    totalCustomers: Int!
+    avgRevenuePerCustomer: Float!
+    avgOrdersPerCustomer: Float!
+    avgDaysActive: Float
+    projectedMonthlyLTV: Float
+    topCustomers: [TopCustomerStat!]!
   }
 
   type StoreRevenue {
