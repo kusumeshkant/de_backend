@@ -450,6 +450,64 @@ async function validateCartStock(storeId, items) {
   return outOfStock;
 }
 
+async function getStaffPerformance(storeId) {
+  const filter = {};
+  if (storeId) filter.storeId = storeId;
+
+  const orders = await Order.find(filter);
+
+  // Build per-staff stats from staffActions audit trail
+  const staffMap = {};
+
+  for (const order of orders) {
+    for (const action of (order.staffActions ?? [])) {
+      const sid  = action.staffId;
+      const name = action.staffName ?? 'Unknown';
+      if (!sid) continue;
+
+      if (!staffMap[sid]) {
+        staffMap[sid] = {
+          staffId:            sid,
+          staffName:          name,
+          ordersCompleted:    0,
+          ordersCancelled:    0,
+          flagsRaised:        0,
+          totalOrdersHandled: new Set(),
+          fulfillmentTimes:   [],
+        };
+      }
+
+      staffMap[sid].totalOrdersHandled.add(order._id.toString());
+
+      if (action.action === 'completed') {
+        staffMap[sid].ordersCompleted += 1;
+        // Fulfillment time for orders this staff completed
+        if (order.completedAt && order.createdAt) {
+          const mins = (order.completedAt - order.createdAt) / 1000 / 60;
+          staffMap[sid].fulfillmentTimes.push(mins);
+        }
+      }
+      if (action.action === 'cancelled')    staffMap[sid].ordersCancelled += 1;
+      if (action.action === 'flagged_issue') staffMap[sid].flagsRaised    += 1;
+    }
+  }
+
+  return Object.values(staffMap).map((s) => ({
+    staffId:              s.staffId,
+    staffName:            s.staffName,
+    ordersCompleted:      s.ordersCompleted,
+    ordersCancelled:      s.ordersCancelled,
+    flagsRaised:          s.flagsRaised,
+    totalOrdersHandled:   s.totalOrdersHandled.size,
+    avgFulfillmentTime:   s.fulfillmentTimes.length > 0
+      ? s.fulfillmentTimes.reduce((a, b) => a + b, 0) / s.fulfillmentTimes.length
+      : null,
+    cancellationRate:     s.totalOrdersHandled.size > 0
+      ? (s.ordersCancelled / s.totalOrdersHandled.size) * 100
+      : 0,
+  })).sort((a, b) => b.ordersCompleted - a.ordersCompleted);
+}
+
 async function getCustomerRetention(storeId) {
   const filter = {};
   if (storeId) filter.storeId = storeId;
@@ -533,4 +591,5 @@ module.exports = {
   validateCartStock,
   getStoreAnalytics,
   getCustomerRetention,
+  getStaffPerformance,
 };

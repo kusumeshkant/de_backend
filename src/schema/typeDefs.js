@@ -185,6 +185,9 @@ const typeDefs = `#graphql
 
     # Customer retention — returning customers, retention rate, new vs repeat (requires Firebase auth)
     customerRetention(storeId: ID): CustomerRetentionStats!
+
+    # Staff performance — orders completed, cancellations, flags, avg fulfillment time per staff member
+    staffPerformance(storeId: ID): [StaffPerformanceStat!]!
   }
 
   type RazorpayOrder {
@@ -389,6 +392,17 @@ const typeDefs = `#graphql
     avgFulfillmentTimeToday: Float
     peakHours: [HourStat!]!
     peakDays: [DayStat!]!
+  }
+
+  type StaffPerformanceStat {
+    staffId: String!
+    staffName: String!
+    ordersCompleted: Int!
+    ordersCancelled: Int!
+    flagsRaised: Int!
+    totalOrdersHandled: Int!
+    avgFulfillmentTime: Float
+    cancellationRate: Float!
   }
 
   type CustomerRetentionStats {
