@@ -56,8 +56,7 @@ const resolvers = {
       }
     },
 
-    nearbyStores: async (_, { lat, lon }, context) => {
-      requireAuth(context);
+    nearbyStores: async (_, { lat, lon }) => {
       try {
         return await getNearbyStores(lat, lon, 2);
       } catch (error) {
