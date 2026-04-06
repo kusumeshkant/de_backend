@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@apollo/server": "^4.11.0",
-    "@as-integrations/cloudflare-workers": "^1.1.1",
     "@as-integrations/next": "^4.1.0",
     "dotenv": "^17.2.3",
     "firebase-admin": "^13.7.0",
@@ -25,9 +24,6 @@
     "winston": "^3.10.0"
   },
   "devDependencies": {
-    "esbuild": "^0.27.7",
-    "esbuild-plugin-polyfill-node": "^0.3.0",
-    "nodemon": "^3.0.0",
-    "wrangler": "^4.80.0"
+    "nodemon": "^3.0.0"
   }
 }
