@@ -14,6 +14,7 @@
   "dependencies": {
     "@apollo/server": "^4.11.0",
     "@as-integrations/cloudflare-workers": "^1.1.1",
+    "@as-integrations/next": "^4.1.0",
     "dotenv": "^17.2.3",
     "firebase-admin": "^13.7.0",
     "graphql": "^16.6.0",
