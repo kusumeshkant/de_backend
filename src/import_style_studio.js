@@ -1,6 +1,6 @@
 /**
  * One-time import script — The Style Studio HSR
- * Reads StockReport-Export Excel and inserts products into MongoDB.
+ * Data is hardcoded from StockReport-Export (12).xlsx parsed on 2026-03-27.
  *
  * Run ONCE from terminal:
  *   node src/import_style_studio.js
@@ -10,90 +10,176 @@
  */
 
 const mongoose = require('mongoose');
-const xlsx = require('xlsx');
-const path = require('path');
 const Store = require('./models/Store');
 const Product = require('./models/Product');
-
-// ── Config ────────────────────────────────────────────────────────────────────
 
 const MONGODB_URI = process.env.MONGODB_URI ||
   'mongodb+srv://dq_db:Klpd420dq@cluster0.p7pe89o.mongodb.net/dq_app';
 
-const EXCEL_PATH = path.join(
-  'D:\\D_Q_3rd_demo_app\\inventory\\the_style_studio\\24_03_2026',
-  'StockReport-Export (12).xlsx'
-);
+// ── Store ─────────────────────────────────────────────────────────────────────
 
-const STORE_DATA = {
+const STORE = {
   name: 'The Style Studio',
   storeCode: 'SS-HSR-001',
   address: 'HSR Layout, Bengaluru',
-  lat: 12.9116,
-  lon: 77.6473,
+  latitude: 12.9116,
+  longitude: 77.6473,
 };
 
-// ── Excel Parser ──────────────────────────────────────────────────────────────
+// ── Products (parsed from StockReport-Export (12).xlsx) ───────────────────────
 
-function parseExcel(filePath) {
-  const wb = xlsx.readFile(filePath);
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = xlsx.utils.sheet_to_json(ws, { header: 1 });
-
-  // Row 0 is header — skip it
-  const headers = rows[0];
-  console.log('Excel headers:', headers);
-
-  const products = [];
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || row.length === 0) continue;
-
-    // Map columns by index (based on StockReport-Export structure):
-    // 0:Barcode, 1:Product Name, 2:Sku Code, 3:Product Code,
-    // 4:Category, 5:Subcategory, 6:Brand, 7:Color,
-    // 8:GarmentSize, 9:ActualSize, 10:Location, 11:Gender,
-    // 12:UQC, 13:MRP, 14:Opening, 15:Inward, 16:Sold,
-    // ... 26:InStock, 27:Total Cost Value
-
-    const barcode  = row[0]?.toString().trim();
-    const name     = row[1]?.toString().trim();
-    const sku      = row[2]?.toString().trim() || null;
-    const catMain  = row[4]?.toString().trim() || null;
-    const catSub   = row[5]?.toString().trim() || null;
-    const brand    = row[6]?.toString().trim() || null;
-    const color    = row[7]?.toString().trim() || null;
-    const sizeGarment = row[8] != null ? row[8].toString().trim() : null;
-    const sizeActual  = row[9]?.toString().trim() || null;
-    const gender   = row[11]?.toString().trim() || null;
-    const mrp      = parseFloat(row[13]) || 0;
-    const inStock  = parseInt(row[26]) || 0;
-
-    if (!barcode || !name) {
-      console.warn(`Row ${i} skipped — missing barcode or name`);
-      continue;
-    }
-
-    products.push({
-      barcode,
-      sku,
-      name,
-      brand,
-      gender: ['Men', 'Women', 'Unisex'].includes(gender) ? gender : null,
-      color: color || null,
-      category: { main: catMain, sub: catSub },
-      size: { garment: sizeGarment, actual: sizeActual },
-      mrp,
-      price: mrp,        // price = mrp for now — admin can update later
-      stock: inStock,
-      reorderLevel: 2,   // low threshold for boutique (small stock per item)
-      isAvailable: true,
-    });
-  }
-
-  return products;
-}
+const PRODUCTS = [
+  {
+    barcode: '1000001717',
+    sku: '#SSW-HSR-TPS003',
+    name: 'Madewell Linen Vest Top',
+    brand: 'Madewell',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Vest Top', sub: 'Linen' },
+    size: { garment: '12', actual: 'L' },
+    mrp: 2100,
+    price: 2100,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001716',
+    sku: '#SSW-HSR-DS003',
+    name: 'J.Crew Long Printed Dresses',
+    brand: 'J.Crew',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Long' },
+    size: { garment: 'L', actual: 'XL' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001715',
+    sku: '#SSW-HSR-DS003',
+    name: 'J.Crew Long Printed Dresses',
+    brand: 'J.Crew',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Long' },
+    size: { garment: 'M', actual: 'L' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001714',
+    sku: '#SSW-HSR-DS003',
+    name: 'J.Crew Long Printed Dresses',
+    brand: 'J.Crew',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Long' },
+    size: { garment: 'S', actual: 'M' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001713',
+    sku: '#SSW-HSR-DS003',
+    name: 'American Eagle Short Denim Dresses',
+    brand: 'American Eagle',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Short' },
+    size: { garment: 'XS', actual: 'XS' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001712',
+    sku: '#SSW-HSR-DS003',
+    name: 'Aerie Midi Dresses',
+    brand: 'Aerie',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Midi' },
+    size: { garment: 'XS', actual: 'XS' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001711',
+    sku: '#SSW-HSR-DS003',
+    name: 'Aerie Midi Dresses',
+    brand: 'Aerie',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Midi' },
+    size: { garment: 'S', actual: 'S' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001710',
+    sku: '#SSW-HSR-DS003',
+    name: 'Aerie Midi Dresses',
+    brand: 'Aerie',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Midi' },
+    size: { garment: 'M', actual: 'M' },
+    mrp: 1850,
+    price: 1850,
+    stock: 2,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001709',
+    sku: '#SSW-HSR-DS003',
+    name: 'J.Crew Printed Dresses',
+    brand: 'J.Crew',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Printed' },
+    size: { garment: 'M', actual: 'L' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+  {
+    barcode: '1000001708',
+    sku: '#SSW-HSR-DS003',
+    name: 'J.Crew Printed Dresses',
+    brand: 'J.Crew',
+    gender: 'Women',
+    color: null,
+    category: { main: 'Dresses', sub: 'Printed' },
+    size: { garment: 'S', actual: 'M' },
+    mrp: 1850,
+    price: 1850,
+    stock: 1,
+    reorderLevel: 2,
+    isAvailable: true,
+  },
+];
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -104,48 +190,41 @@ async function run() {
     console.log('Connected.\n');
 
     // 1. Find or create the store
-    let store = await Store.findOne({ storeCode: STORE_DATA.storeCode });
-
+    let store = await Store.findOne({ storeCode: STORE.storeCode });
     if (store) {
       console.log(`Store already exists: ${store.name} (${store._id})`);
     } else {
-      store = await Store.create(STORE_DATA);
+      store = await Store.create(STORE);
       console.log(`Store created: ${store.name} (${store._id})`);
     }
 
-    // 2. Parse Excel
-    console.log('\nParsing Excel...');
-    const products = parseExcel(EXCEL_PATH);
-    console.log(`Parsed ${products.length} products from Excel.\n`);
-
-    // 3. Insert products — skip duplicates (same barcode)
+    // 2. Insert products — skip duplicates
     let inserted = 0;
     let skipped = 0;
 
-    for (const p of products) {
+    for (const p of PRODUCTS) {
       const exists = await Product.findOne({ barcode: p.barcode });
       if (exists) {
-        console.log(`  SKIP — barcode ${p.barcode} already exists (${exists.name})`);
+        console.log(`  SKIP — ${p.barcode} already exists (${exists.name})`);
         skipped++;
         continue;
       }
-
       await Product.create({ ...p, storeId: store._id });
       console.log(`  INSERT — ${p.name} | ${p.barcode} | ₹${p.mrp} | stock: ${p.stock}`);
       inserted++;
     }
 
     console.log('\n── Import Complete ──────────────────────');
-    console.log(`Store  : ${store.name} (${STORE_DATA.storeCode})`);
+    console.log(`Store   : ${store.name} (${STORE.storeCode})`);
     console.log(`Inserted: ${inserted}`);
     console.log(`Skipped : ${skipped} (already existed)`);
-    console.log(`Total   : ${products.length}`);
+    console.log(`Total   : ${PRODUCTS.length}`);
 
   } catch (err) {
     console.error('Import failed:', err.message);
   } finally {
     await mongoose.disconnect();
-    console.log('\nDisconnected from MongoDB.');
+    console.log('Disconnected.');
   }
 }
 

@@ -145,10 +145,10 @@ async function validateInviteToken(token) {
 async function acceptInvite({ token, uid }) {
   const invite = await validateInviteToken(token);
 
-  // Update user: role → staff, storeId → invite.storeId
+  // Add 'staff' role without removing existing roles (customer stays intact)
   const user = await User.findOneAndUpdate(
     { firebase_uid: uid },
-    { role: 'staff', storeId: invite.storeId },
+    { $addToSet: { roles: 'staff' }, $set: { storeId: invite.storeId } },
     { new: true }
   );
   if (!user) throw new Error('User not found. Please sign in and try again.');
@@ -160,11 +160,15 @@ async function acceptInvite({ token, uid }) {
 }
 
 async function getStoreStaff(storeId) {
-  return User.find({ storeId, role: { $in: ['staff', 'admin'] } }).sort({ name: 1 });
+  return User.find({ storeId, roles: { $in: ['staff', 'admin'] } }).sort({ name: 1 });
 }
 
 async function removeStaff(userId) {
-  await User.findByIdAndUpdate(userId, { role: 'customer', storeId: null });
+  // Pull staff role, keep customer role, clear storeId
+  await User.findByIdAndUpdate(userId, {
+    $pull: { roles: 'staff' },
+    $set: { storeId: null },
+  });
   return true;
 }
 

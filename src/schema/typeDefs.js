@@ -96,6 +96,7 @@ const typeDefs = `#graphql
     name: String
     email: String
     role: String
+    roles: [String!]!
     storeId: ID
   }
 
@@ -232,8 +233,14 @@ const typeDefs = `#graphql
   }
 
   type Mutation {
-    # Admin self-registration — sets role to admin on first signup via dq_admin app
+    # Admin self-registration — adds 'admin' to roles on first signup via dq_admin app
     registerAdmin: User!
+
+    # Upgrade existing user to admin and link their store (called after store creation)
+    upgradeToAdmin(storeId: ID!): User!
+
+    # DQ App login — silently ensures 'customer' role exists on account
+    ensureCustomerRole: Boolean!
 
     # Update user profile fields — name, phone, email (requires Firebase auth)
     updateProfile(name: String, phone: String, email: String): User!

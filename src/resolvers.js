@@ -1,5 +1,5 @@
 const { GraphQLError } = require('graphql');
-const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, getUserByEmail } = require('./services/userService');
+const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, upgradeToAdmin, ensureCustomerRole, getUserByEmail } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
@@ -14,6 +14,11 @@ function requireAuth(context) {
       extensions: { code: 'UNAUTHENTICATED' },
     });
   }
+}
+
+/** Check if a DB user has any of the given roles */
+function hasRole(user, ...roles) {
+  return roles.some(r => user.roles?.includes(r));
 }
 
 const resolvers = {
@@ -268,14 +273,37 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        // Only set admin if user has no role yet (fresh signup) or is still customer
-        if (!user.role || user.role === 'customer') {
-          return await updateUserRole(user._id, 'admin', null);
+        // Add 'admin' role if not already present (preserves existing roles)
+        if (!hasRole(user, 'admin')) {
+          return await upgradeToAdmin(user._id, user.storeId);
         }
         return user;
       } catch (error) {
         logger.error(`registerAdmin error: ${error.message}`);
         throw error;
+      }
+    },
+
+    upgradeToAdmin: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        return await upgradeToAdmin(user._id, storeId);
+      } catch (error) {
+        logger.error(`upgradeToAdmin error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    ensureCustomerRole: async (_, __, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        await ensureCustomerRole(user._id);
+        return true;
+      } catch (error) {
+        logger.error(`ensureCustomerRole error: ${error.message}`);
+        return false;
       }
     },
 
@@ -565,6 +593,13 @@ const resolvers = {
   User: {
     id: (user) => user._id.toString(),
     storeId: (user) => user.storeId?.toString() ?? null,
+    roles: (user) => user.roles ?? ['customer'],
+    role: (user) => {
+      const roles = user.roles ?? ['customer'];
+      if (roles.includes('admin')) return 'admin';
+      if (roles.includes('staff')) return 'staff';
+      return 'customer';
+    },
   },
 
   Product: {

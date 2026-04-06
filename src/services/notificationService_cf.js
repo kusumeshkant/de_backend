@@ -80,7 +80,7 @@ async function sendNewOrderToStaff(storeId, { orderId, storeName, itemCount, gra
   try {
     const staffUsers = await User.find({
       storeId,
-      role: { $in: ['staff', 'admin'] },
+      roles: { $in: ['staff', 'admin'] },
       fcmToken: { $ne: null },
     });
 
