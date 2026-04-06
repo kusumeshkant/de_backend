@@ -450,6 +450,75 @@ async function validateCartStock(storeId, items) {
   return outOfStock;
 }
 
+async function getCustomerRetention(storeId) {
+  const filter = {};
+  if (storeId) filter.storeId = storeId;
+
+  // All orders sorted by user + createdAt
+  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 });
+
+  // Group orders by userId
+  const userOrderMap = {};
+  for (const order of orders) {
+    const uid = order.user?.toString();
+    if (!uid) continue;
+    if (!userOrderMap[uid]) userOrderMap[uid] = [];
+    userOrderMap[uid].push(order.createdAt);
+  }
+
+  const totalCustomers = Object.keys(userOrderMap).length;
+  if (totalCustomers === 0) {
+    return {
+      totalCustomers: 0,
+      returningCustomers: 0,
+      retentionRate: 0,
+      avgRepeatIntervalDays: null,
+      newCustomersThisWeek: 0,
+      newCustomersLastWeek: 0,
+    };
+  }
+
+  // Returning = users with 2+ orders
+  const returningUsers = Object.values(userOrderMap).filter((dates) => dates.length >= 2);
+  const returningCustomers = returningUsers.length;
+  const retentionRate = (returningCustomers / totalCustomers) * 100;
+
+  // Avg days between 1st and 2nd order
+  const intervals = returningUsers.map((dates) => {
+    const first  = new Date(dates[0]);
+    const second = new Date(dates[1]);
+    return (second - first) / (1000 * 60 * 60 * 24); // ms → days
+  });
+  const avgRepeatIntervalDays = intervals.length > 0
+    ? intervals.reduce((s, d) => s + d, 0) / intervals.length
+    : null;
+
+  // New customers this week vs last week (first order in that window)
+  const now = new Date();
+  const startOfThisWeek = new Date(now);
+  startOfThisWeek.setDate(now.getDate() - now.getDay());
+  startOfThisWeek.setHours(0, 0, 0, 0);
+  const startOfLastWeek = new Date(startOfThisWeek);
+  startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+
+  let newCustomersThisWeek = 0;
+  let newCustomersLastWeek = 0;
+  for (const dates of Object.values(userOrderMap)) {
+    const firstOrder = new Date(dates[0]);
+    if (firstOrder >= startOfThisWeek) newCustomersThisWeek++;
+    else if (firstOrder >= startOfLastWeek && firstOrder < startOfThisWeek) newCustomersLastWeek++;
+  }
+
+  return {
+    totalCustomers,
+    returningCustomers,
+    retentionRate,
+    avgRepeatIntervalDays,
+    newCustomersThisWeek,
+    newCustomersLastWeek,
+  };
+}
+
 module.exports = {
   createOrder,
   getMyOrders,
@@ -463,4 +532,5 @@ module.exports = {
   getStoreStats,
   validateCartStock,
   getStoreAnalytics,
+  getCustomerRetention,
 };

@@ -182,6 +182,9 @@ const typeDefs = `#graphql
 
     # Store-level analytics — top products, daily revenue, KPIs (requires Firebase auth)
     storeAnalytics(storeId: ID): StoreAnalytics!
+
+    # Customer retention — returning customers, retention rate, new vs repeat (requires Firebase auth)
+    customerRetention(storeId: ID): CustomerRetentionStats!
   }
 
   type RazorpayOrder {
@@ -386,6 +389,15 @@ const typeDefs = `#graphql
     avgFulfillmentTimeToday: Float
     peakHours: [HourStat!]!
     peakDays: [DayStat!]!
+  }
+
+  type CustomerRetentionStats {
+    totalCustomers: Int!
+    returningCustomers: Int!
+    retentionRate: Float!
+    avgRepeatIntervalDays: Float
+    newCustomersThisWeek: Int!
+    newCustomersLastWeek: Int!
   }
 
   type StoreRevenue {

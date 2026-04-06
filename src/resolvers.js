@@ -4,7 +4,7 @@ const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStor
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
-const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics } = require('./services/orderService');
+const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
 const logger = require('./utils/logger_cf');
 
@@ -267,6 +267,21 @@ const resolvers = {
         return await getStoreAnalytics(effectiveStoreId);
       } catch (error) {
         logger.error(`storeAnalytics error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    customerRetention: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        if (!hasRole(user, 'admin')) {
+          throw new GraphQLError('Not authorized', { extensions: { code: 'FORBIDDEN' } });
+        }
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
+        return await getCustomerRetention(effectiveStoreId);
+      } catch (error) {
+        logger.error(`customerRetention error: ${error.message}`);
         throw error;
       }
     },
