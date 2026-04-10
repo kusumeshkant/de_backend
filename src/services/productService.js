@@ -11,7 +11,9 @@ async function getProducts() {
 }
 
 async function getStoreProducts(storeId) {
-  return await Product.find({ storeId, stock: { $gt: 0 } }).sort({ name: 1 });
+  // Admin manage-products view — return ALL products regardless of stock.
+  // The customer-facing app (dq_app) does not use this query; it scans barcodes.
+  return await Product.find({ storeId }).sort({ name: 1 });
 }
 
 async function createProduct({ storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel }) {
@@ -74,8 +76,10 @@ async function bulkUpsertProducts(storeId, products, { fileName, totalRows, tota
   const errors = [];
 
   for (const p of products) {
-    // Skip products with zero stock — no point adding items that are out of stock
-    if ((p.stock ?? 0) === 0) { skipped++; continue; }
+    // Skip rows with no barcode or name — these are genuinely invalid rows.
+    // Do NOT skip zero-stock products: admin may upload a catalogue before
+    // stocking it, and should be able to see and manage those products.
+    if (!p.barcode || !p.name) { skipped++; continue; }
     try {
       const filter = { barcode: p.barcode, storeId };
       const update = {
