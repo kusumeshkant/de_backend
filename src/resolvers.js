@@ -183,6 +183,14 @@ const resolvers = {
       try {
         const user = await getOrCreateUser(context.user);
         requireRole(user, 'staff', 'admin');
+        // Ownership check: staff/admin may only query orders for their own store.
+        // Without this, a compromised staff account at Store A could exfiltrate
+        // the full order history of Store B by supplying a different storeId.
+        if (!user.storeId || user.storeId.toString() !== storeId.toString()) {
+          throw new GraphQLError('Access denied: you do not belong to this store', {
+            extensions: { code: 'FORBIDDEN' },
+          });
+        }
         return await getStoreOrders(storeId);
       } catch (error) {
         logger.error(`storeOrders error: ${error.message}`);
@@ -772,6 +780,19 @@ const resolvers = {
       try {
         const caller = await getOrCreateUser(context.user);
         requireRole(caller, 'admin');
+        // Ownership check: the target user must belong to the caller's store.
+        // Without this, an admin at Store A can reassign roles for staff at
+        // Store B by supplying a different userId — a privilege escalation vector.
+        const User = require('./models/User');
+        const target = await User.findById(userId);
+        if (!target) {
+          throw new GraphQLError('User not found', { extensions: { code: 'NOT_FOUND' } });
+        }
+        if (!caller.storeId || target.storeId?.toString() !== caller.storeId.toString()) {
+          throw new GraphQLError('Access denied: target user does not belong to your store', {
+            extensions: { code: 'FORBIDDEN' },
+          });
+        }
         return await updateUserRole(userId, role, storeId);
       } catch (error) {
         logger.error(`updateUserRole error: ${error.message}`);
@@ -822,8 +843,20 @@ const resolvers = {
     removeStaff: async (_, { userId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        const caller = await getOrCreateUser(context.user);
+        requireRole(caller, 'admin');
+        // Ownership check: the target staff member must belong to the caller's
+        // store. Without this, an admin at Store A can fire staff from Store B.
+        const User = require('./models/User');
+        const target = await User.findById(userId);
+        if (!target) {
+          throw new GraphQLError('User not found', { extensions: { code: 'NOT_FOUND' } });
+        }
+        if (!caller.storeId || target.storeId?.toString() !== caller.storeId.toString()) {
+          throw new GraphQLError('Access denied: target user does not belong to your store', {
+            extensions: { code: 'FORBIDDEN' },
+          });
+        }
         return await removeStaff(userId);
       } catch (error) {
         logger.error(`removeStaff error: ${error.message}`);
