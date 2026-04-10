@@ -137,6 +137,11 @@ const typeDefs = `#graphql
     # Current user profile (requires Firebase auth)
     me: User
 
+    # App-specific login gate — call on login and cold start.
+    # appId: "CUSTOMER" | "STAFF" | "ADMIN"
+    # Returns User on success, throws FORBIDDEN if role does not match the app.
+    validateAppAccess(appId: String!): User!
+
     # Order history (requires Firebase auth)
     myOrders: [Order!]!
 
@@ -258,9 +263,6 @@ const typeDefs = `#graphql
 
     # Upgrade existing user to admin and link their store (called after store creation)
     upgradeToAdmin(storeId: ID!): User!
-
-    # DQ App login — silently ensures 'customer' role exists on account
-    ensureCustomerRole: Boolean!
 
     # Update user profile fields — name, phone, email (requires Firebase auth)
     updateProfile(name: String, phone: String, email: String): User!
