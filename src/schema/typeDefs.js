@@ -202,6 +202,18 @@ const typeDefs = `#graphql
 
     # Monthly revenue breakdown for a given year — 12 months returned always (requires Firebase auth)
     monthlyRevenue(storeId: ID, year: Int): [MonthlyRevenueStat!]!
+
+    # Subscription: all publicly visible plans (no auth required)
+    availablePlans: [SubscriptionPlan!]!
+
+    # Subscription: current subscription for a store (requires admin auth)
+    storeSubscription(storeId: ID!): StoreSubscription
+
+    # Subscription: feature access map — what this store can use (requires admin auth)
+    featureAccessMap(storeId: ID!): FeatureAccessMap!
+
+    # Subscription: remaining usage for a specific limit key (requires admin auth)
+    planUsage(storeId: ID!, limitKey: String!): PlanUsage!
   }
 
   type RazorpayOrder {
@@ -363,6 +375,12 @@ const typeDefs = `#graphql
 
     # dq_staff: accept an invite code — links staff to store (requires Firebase auth)
     acceptInvite(token: String!): User!
+
+    # Subscription: cancel current subscription (requires admin auth)
+    cancelSubscription(storeId: ID!, cancelReason: String): StoreSubscription!
+
+    # Subscription: admin override — grant a store elevated plan access for N days (requires admin auth)
+    setAdminSubscriptionOverride(storeId: ID!, planName: String!, days: Int!, overrideReason: String): StoreSubscription!
   }
 
   type ProductStat {
@@ -502,6 +520,92 @@ const typeDefs = `#graphql
     pendingOrders: Int!
     completedOrders: Int!
     recentOrders: [Order!]!
+  }
+
+  # ── Subscription / Plan types ────────────────────────────────────────────────
+
+  type PlanPrice {
+    monthly: Float!
+    annual: Float!
+  }
+
+  type PlanFeatures {
+    coupons: Boolean!
+    analytics: Boolean!
+    bulkUpload: Boolean!
+    advancedReports: Boolean!
+    staffPerformanceAnalytics: Boolean!
+    customerLtvAnalytics: Boolean!
+    prioritySupport: Boolean!
+    customBranding: Boolean!
+    exportData: Boolean!
+  }
+
+  type PlanLimits {
+    maxStaff: Int!
+    maxProducts: Int!
+    maxOrdersPerMonth: Int!
+    maxStores: Int!
+  }
+
+  type SubscriptionPlan {
+    id: ID!
+    name: String!
+    displayName: String!
+    description: String!
+    price: PlanPrice!
+    features: PlanFeatures!
+    limits: PlanLimits!
+    trialDays: Int!
+    graceDays: Int!
+    isRecommended: Boolean!
+    displayOrder: Int!
+  }
+
+  type UsageCounters {
+    staffCount: Int!
+    productCount: Int!
+    ordersThisMonth: Int!
+    lastCountedAt: String
+  }
+
+  type StoreSubscription {
+    id: ID!
+    storeId: ID!
+    plan: SubscriptionPlan!
+    status: String!
+    billingCycle: String!
+    currentPeriodStart: String
+    currentPeriodEnd: String
+    trialEndsAt: String
+    gracePeriodEndsAt: String
+    nextBillingAt: String
+    cancelledAt: String
+    cancelReason: String
+    autoRenew: Boolean!
+    isAdminOverride: Boolean!
+    overrideExpiresAt: String
+    usageCounters: UsageCounters!
+  }
+
+  type PlanUsage {
+    limitKey: String!
+    used: Int!
+    limit: Int!
+    remaining: Int!
+    isUnlimited: Boolean!
+  }
+
+  type FeatureAccessMap {
+    coupons: Boolean!
+    analytics: Boolean!
+    bulkUpload: Boolean!
+    advancedReports: Boolean!
+    staffPerformanceAnalytics: Boolean!
+    customerLtvAnalytics: Boolean!
+    prioritySupport: Boolean!
+    customBranding: Boolean!
+    exportData: Boolean!
   }
 `;
 
