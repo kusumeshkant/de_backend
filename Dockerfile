@@ -1,23 +1,24 @@
-# Use the official Node.js image as the base image
-FROM node:18
+# Azure Container Apps optimised image
+FROM node:20-alpine
 
-# Set the working directory in the container
+# Create non-root user for security
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 WORKDIR /app
 
-# Copy package.json and package-lock.json
+# Install dependencies only (production)
 COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Install dependencies
-RUN npm install
-
-# Copy the rest of the application code
+# Copy application source
 COPY . .
 
-# Only set NODE_ENV here — all secrets injected by Railway at runtime
-ENV NODE_ENV=production
+# Transfer ownership to non-root user
+RUN chown -R appuser:appgroup /app
 
-# Railway injects PORT automatically, default to 4000
+ENV NODE_ENV=production
 EXPOSE 4000
 
-# Define the command to run the application
-CMD ["npm", "start"]
+USER appuser
+
+CMD ["node", "src/index.js"]
