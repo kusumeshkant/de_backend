@@ -19,52 +19,57 @@ const { verifyToken } = require('./middleware/auth');
 const logger = require('./utils/logger');
 
 const startServer = async () => {
-  try {
-    if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
+  if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
 
-    await mongoose.connect(process.env.MONGO_URI);
-    logger.info('Connected to MongoDB');
+  const app = express();
+  const port = Number(process.env.PORT) || 4000;
 
-    const app = express();
+  // Health check — responds immediately so Azure startup probe passes
+  // before MongoDB finishes connecting
+  app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-    // Health check for Azure Container Apps liveness/readiness probes
-    app.get('/health', (req, res) => res.json({ status: 'ok' }));
+  // Rate limiting — 200 requests per 15 minutes per IP
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+  });
 
-    // Rate limiting — 200 requests per 15 minutes per IP
-    const limiter = rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 200,
+  const server = new ApolloServer({
+    typeDefs,
+    resolvers,
+    validationRules: [depthLimit(7)],
+  });
+
+  await server.start();
+
+  app.use(
+    '/graphql',
+    limiter,
+    cors(),
+    express.json(),
+    expressMiddleware(server, {
+      context: async ({ req }) => {
+        const user = await verifyToken(req);
+        return { user };
+      },
+    })
+  );
+
+  // Start listening BEFORE connecting to MongoDB so the startup probe passes
+  app.listen(port, () => {
+    logger.info(`Server listening on port ${port}`);
+  });
+
+  // Connect to MongoDB in the background
+  mongoose.connect(process.env.MONGO_URI)
+    .then(() => logger.info('Connected to MongoDB'))
+    .catch((err) => {
+      logger.error(`MongoDB connection failed: ${err.message}`);
+      process.exit(1);
     });
-
-    const server = new ApolloServer({
-      typeDefs,
-      resolvers,
-      validationRules: [depthLimit(7)],
-    });
-
-    await server.start();
-
-    app.use(
-      '/graphql',
-      limiter,
-      cors(),
-      express.json(),
-      expressMiddleware(server, {
-        context: async ({ req }) => {
-          const user = await verifyToken(req);
-          return { user };
-        },
-      })
-    );
-
-    const port = Number(process.env.PORT) || 4000;
-    app.listen(port, () => {
-      logger.info(`GraphQL server ready at http://localhost:${port}/graphql`);
-    });
-  } catch (error) {
-    logger.error(`Fatal error: ${error.message}`);
-    process.exit(1);
-  }
 };
 
-startServer();
+startServer().catch((err) => {
+  logger.error(`Fatal error: ${err.message}`);
+  process.exit(1);
+});
