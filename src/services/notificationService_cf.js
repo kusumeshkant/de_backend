@@ -3,6 +3,7 @@
  * firebase-admin is already initialized in middleware/auth.js
  */
 const User = require('../models/User');
+const { RoleGroups } = require('../constants/roles');
 
 function getMessaging() {
   // Require firebase-admin lazily so it's already initialized by auth.js
@@ -80,7 +81,7 @@ async function sendNewOrderToStaff(storeId, { orderId, storeName, itemCount, gra
   try {
     const staffUsers = await User.find({
       storeId,
-      roles: { $in: ['staff', 'admin'] },
+      roles: { $in: RoleGroups.STORE_OPERATORS },
       fcmToken: { $ne: null },
     });
 

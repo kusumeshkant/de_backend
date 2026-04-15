@@ -16,6 +16,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../models/User');
+const { Roles } = require('../constants/roles');
 
 async function run() {
   const uri = process.env.MONGO_URI;
@@ -28,8 +29,8 @@ async function run() {
   console.log('Connected to MongoDB');
 
   // Preview before changes
-  const adminCorrupted = await User.countDocuments({ roles: { $all: ['admin', 'customer'] } });
-  const staffCorrupted = await User.countDocuments({ roles: { $all: ['staff', 'customer'] } });
+  const adminCorrupted = await User.countDocuments({ roles: { $all: [Roles.ADMIN, Roles.CUSTOMER] } });
+  const staffCorrupted = await User.countDocuments({ roles: { $all: [Roles.STAFF, Roles.CUSTOMER] } });
   console.log(`Found ${adminCorrupted} admin+customer accounts (corrupted)`);
   console.log(`Found ${staffCorrupted} staff+customer accounts (corrupted)`);
 
@@ -39,26 +40,24 @@ async function run() {
     return;
   }
 
-  // Remove 'customer' from admin accounts
+  // Remove customer role from admin accounts
   const adminResult = await User.updateMany(
-    { roles: { $all: ['admin', 'customer'] } },
-    { $pull: { roles: 'customer' } }
+    { roles: { $all: [Roles.ADMIN, Roles.CUSTOMER] } },
+    { $pull: { roles: Roles.CUSTOMER } }
   );
   console.log(`Fixed ${adminResult.modifiedCount} admin accounts`);
 
-  // Remove 'customer' from staff accounts
+  // Remove customer role from staff accounts
   const staffResult = await User.updateMany(
-    { roles: { $all: ['staff', 'customer'] } },
-    { $pull: { roles: 'customer' } }
+    { roles: { $all: [Roles.STAFF, Roles.CUSTOMER] } },
+    { $pull: { roles: Roles.CUSTOMER } }
   );
   console.log(`Fixed ${staffResult.modifiedCount} staff accounts`);
 
   // Verify
-  const remaining = await User.countDocuments({
-    roles: { $all: ['admin', 'customer'] }
-  }) + await User.countDocuments({
-    roles: { $all: ['staff', 'customer'] }
-  });
+  const remaining =
+    await User.countDocuments({ roles: { $all: [Roles.ADMIN, Roles.CUSTOMER] } }) +
+    await User.countDocuments({ roles: { $all: [Roles.STAFF, Roles.CUSTOMER] } });
   console.log(`Remaining corrupted records: ${remaining}`);
 
   await mongoose.disconnect();

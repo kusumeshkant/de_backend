@@ -1,4 +1,5 @@
 const { GraphQLError } = require('graphql');
+const { Roles, AppId, RoleHint, RoleGroups } = require('./constants/roles');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
@@ -102,7 +103,7 @@ const resolvers = {
         const User = require('./models/User');
         let user;
 
-        if (appId === 'CUSTOMER') {
+        if (appId === AppId.CUSTOMER) {
           // Step 1: look up the user WITHOUT auto-creating first.
           // This prevents a staff-invited user (whose firebase_uid exists in
           // MongoDB as staff-only) from being silently created as a customer
@@ -114,32 +115,32 @@ const resolvers = {
             // A dual-role account (customer + staff, or customer + admin) IS
             // allowed — the customer role is what matters here, not whether
             // they also have another role.
-            if (!hasRole(user, 'customer')) {
-              if (hasRole(user, 'admin')) {
+            if (!hasRole(user, Roles.CUSTOMER)) {
+              if (hasRole(user, Roles.ADMIN)) {
                 throw new GraphQLError(
                   'This account is registered as a store admin. To shop on DQ, open the Sign Up screen and tap "Continue with Google" — it will add a customer profile to your account.',
-                  { extensions: { code: 'FORBIDDEN', hint: 'ADMIN_NO_CUSTOMER' } }
+                  { extensions: { code: 'FORBIDDEN', hint: RoleHint.ADMIN_NO_CUSTOMER } }
                 );
               }
-              if (hasRole(user, 'staff')) {
+              if (hasRole(user, Roles.STAFF)) {
                 throw new GraphQLError(
                   'This account is registered as a store staff member. To shop on DQ, open the Sign Up screen and tap "Continue with Google" — it will add a customer profile to your account.',
-                  { extensions: { code: 'FORBIDDEN', hint: 'STAFF_NO_CUSTOMER' } }
+                  { extensions: { code: 'FORBIDDEN', hint: RoleHint.STAFF_NO_CUSTOMER } }
                 );
               }
               // Has unrecognised roles, no customer — block generically
               throw new GraphQLError(
                 'This account does not have customer access. Please sign up on the DQ App to shop.',
-                { extensions: { code: 'FORBIDDEN', hint: 'NO_CUSTOMER' } }
+                { extensions: { code: 'FORBIDDEN', hint: RoleHint.NO_CUSTOMER } }
               );
             }
-            // user has 'customer' role — fall through to return profile
+            // user has customer role — fall through to return profile
           } else {
             // First-ever login to DQ App — safe to auto-create as customer.
             user = await getOrCreateUser(context.user);
           }
 
-        } else if (appId === 'STAFF') {
+        } else if (appId === AppId.STAFF) {
           // Staff must have registered through the invite flow first.
           user = await User.findOne({ firebase_uid: context.user.uid });
           if (!user) {
@@ -148,17 +149,17 @@ const resolvers = {
               { extensions: { code: 'NOT_FOUND' } }
             );
           }
-          if (!hasRole(user, 'staff', 'admin')) {
+          if (!hasRole(user, Roles.STAFF, Roles.ADMIN)) {
             throw new GraphQLError(
               'Access denied. Contact your store admin to get staff access.',
               { extensions: { code: 'FORBIDDEN' } }
             );
           }
 
-        } else if (appId === 'ADMIN') {
+        } else if (appId === AppId.ADMIN) {
           // Admins must have registered through the dq_admin signup flow first.
           user = await User.findOne({ firebase_uid: context.user.uid });
-          if (!user || !hasRole(user, 'admin')) {
+          if (!user || !hasRole(user, Roles.ADMIN)) {
             throw new GraphQLError(
               'This account is not registered as a store admin. Please sign up via the DQ Admin app.',
               { extensions: { code: 'FORBIDDEN' } }
@@ -186,7 +187,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'staff', 'admin');
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
         if (user.storeId) {
           const store = await getStoreById(user.storeId.toString());
           return store ? [store] : [];
@@ -202,7 +203,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'staff', 'admin');
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
         // Ownership check: staff/admin may only query orders for their own store.
         // Without this, a compromised staff account at Store A could exfiltrate
         // the full order history of Store B by supplying a different storeId.
@@ -222,7 +223,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'staff', 'admin');
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
         return await getOrderByIdForStaff(orderId);
       } catch (error) {
         logger.error(`orderById error: ${error.message}`);
@@ -234,7 +235,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'staff', 'admin');
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
         return await getStoreProducts(storeId);
       } catch (error) {
         logger.error(`storeProducts error: ${error.message}`);
@@ -258,7 +259,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
         return await getAllOrders({ storeId: effectiveStoreId, status });
       } catch (error) {
@@ -271,7 +272,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         if (user.storeId) {
           const stats = await getStoreStats(user.storeId.toString());
           const now = new Date();
@@ -314,7 +315,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await getStoreStats(storeId);
       } catch (error) {
         logger.error(`storeStats error: ${error.message}`);
@@ -326,7 +327,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : null;
         return await getAllStaff(effectiveStoreId);
       } catch (error) {
@@ -339,7 +340,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await getStoreStaff(storeId);
       } catch (error) {
         logger.error(`storeStaff error: ${error.message}`);
@@ -351,7 +352,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await getPendingInvites(storeId);
       } catch (error) {
         logger.error(`pendingInvites error: ${error.message}`);
@@ -363,7 +364,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await getUserByEmail(email);
       } catch (error) {
         logger.error(`userByEmail error: ${error.message}`);
@@ -375,7 +376,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'customer');
+        requireRole(user, Roles.CUSTOMER);
         return await validateCartStock(storeId, items, user._id);
       } catch (error) {
         logger.error(`validateCartStock error: ${error.message}`);
@@ -387,7 +388,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getStoreAnalytics(effectiveStoreId);
       } catch (error) {
@@ -400,7 +401,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getBasketAbandonmentStats(effectiveStoreId);
       } catch (error) {
@@ -413,7 +414,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getCustomerLTV(effectiveStoreId);
       } catch (error) {
@@ -426,7 +427,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getMonthlyRevenue(effectiveStoreId, year ?? null);
       } catch (error) {
@@ -439,7 +440,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getStaffPerformance(effectiveStoreId);
       } catch (error) {
@@ -452,7 +453,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getCustomerRetention(effectiveStoreId);
       } catch (error) {
@@ -465,7 +466,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const logs = await getUploadLogs(storeId);
         return logs.map((l) => ({
           ...l,
@@ -486,7 +487,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'customer');
+        requireRole(user, Roles.CUSTOMER);
         return await getMyOrders(user._id);
       } catch (error) {
         logger.error(`myOrders error: ${error.message}`);
@@ -498,7 +499,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'customer');
+        requireRole(user, Roles.CUSTOMER);
         return await getOrderById(id, user._id);
       } catch (error) {
         logger.error(`order error: ${error.message}`);
@@ -529,7 +530,7 @@ const resolvers = {
           // First-ever login — create as customer
           return await getOrCreateUser(context.user);
         }
-        if (hasRole(user, 'customer')) {
+        if (hasRole(user, Roles.CUSTOMER)) {
           // Already a customer — idempotent, return as-is
           return await getProfile(user._id);
         }
@@ -554,7 +555,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        if (hasRole(user, 'admin')) return user; // idempotent
+        if (hasRole(user, Roles.ADMIN)) return user; // idempotent
 
         // Prevent existing customers from self-promoting.
         // A real customer will have placed orders; a new admin account won't.
@@ -615,7 +616,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'customer');
+        requireRole(user, Roles.CUSTOMER);
         return await createRazorpayOrder(amount);
       } catch (error) {
         logger.error(`createRazorpayOrder error: ${error.message}`);
@@ -636,7 +637,7 @@ const resolvers = {
         }
 
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'customer');
+        requireRole(user, Roles.CUSTOMER);
 
         const order = await createOrder({
           userId: user._id,
@@ -672,7 +673,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const staffUser = await getOrCreateUser(context.user);
-        requireRole(staffUser, 'staff', 'admin');
+        requireRole(staffUser, Roles.STAFF, Roles.ADMIN);
         if (staffUser.storeId) {
           const Order = require('./models/Order');
           const existingOrder = await Order.findById(orderId);
@@ -707,7 +708,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const staffUser = await getOrCreateUser(context.user);
-        requireRole(staffUser, 'staff', 'admin');
+        requireRole(staffUser, Roles.STAFF, Roles.ADMIN);
         return await flagOrderIssue(
           orderId,
           reason,
@@ -727,7 +728,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await upgradeToAdmin(user._id, storeId);
       } catch (error) {
         logger.error(`upgradeToAdmin error: ${error.message}`);
@@ -739,7 +740,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await createStore({ name, address, lat, lon, storeCode });
       } catch (error) {
         logger.error(`createStore error: ${error.message}`);
@@ -751,7 +752,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await updateStore(id, { name, address, lat, lon, storeCode, isActive });
       } catch (error) {
         logger.error(`updateStore error: ${error.message}`);
@@ -763,7 +764,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await deleteStore(id);
       } catch (error) {
         logger.error(`deleteStore error: ${error.message}`);
@@ -775,7 +776,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await createProduct({ storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel });
       } catch (error) {
         logger.error(`createProduct error: ${error.message}`);
@@ -787,7 +788,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await updateProduct(id, { sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel, isAvailable });
       } catch (error) {
         logger.error(`updateProduct error: ${error.message}`);
@@ -799,7 +800,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await deleteProduct(id);
       } catch (error) {
         logger.error(`deleteProduct error: ${error.message}`);
@@ -811,7 +812,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await bulkUpsertProducts(storeId, products, {
           fileName,
           totalRows,
@@ -829,7 +830,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const caller = await getOrCreateUser(context.user);
-        requireRole(caller, 'admin');
+        requireRole(caller, Roles.ADMIN);
         // Ownership check: the target user must belong to the caller's store.
         // Without this, an admin at Store A can reassign roles for staff at
         // Store B by supplying a different userId — a privilege escalation vector.
@@ -854,7 +855,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const Store = require('./models/Store');
         const store = await Store.findById(storeId);
         return await inviteStaff({ email, name, storeId, storeName: store?.name ?? 'Your Store' });
@@ -868,7 +869,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         const Store = require('./models/Store');
         const store = await Store.findById(storeId);
         return await bulkInviteStaff({ invites, storeId, storeName: store?.name ?? 'Your Store' });
@@ -882,7 +883,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, 'admin');
+        requireRole(user, Roles.ADMIN);
         return await cancelInvite(inviteId);
       } catch (error) {
         logger.error(`cancelInvite error: ${error.message}`);
@@ -894,7 +895,7 @@ const resolvers = {
       requireAuth(context);
       try {
         const caller = await getOrCreateUser(context.user);
-        requireRole(caller, 'admin');
+        requireRole(caller, Roles.ADMIN);
         // Ownership check: the target staff member must belong to the caller's
         // store. Without this, an admin at Store A can fire staff from Store B.
         const User = require('./models/User');
@@ -942,12 +943,12 @@ const resolvers = {
   User: {
     id: (user) => user._id.toString(),
     storeId: (user) => user.storeId?.toString() ?? null,
-    roles: (user) => user.roles ?? ['customer'],
+    roles: (user) => user.roles ?? [Roles.CUSTOMER],
     role: (user) => {
-      const roles = user.roles ?? ['customer'];
-      if (roles.includes('admin')) return 'admin';
-      if (roles.includes('staff')) return 'staff';
-      return 'customer';
+      const roles = user.roles ?? [Roles.CUSTOMER];
+      if (roles.includes(Roles.ADMIN)) return Roles.ADMIN;
+      if (roles.includes(Roles.STAFF)) return Roles.STAFF;
+      return Roles.CUSTOMER;
     },
   },
 

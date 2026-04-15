@@ -87,9 +87,10 @@ async function sendOrderStatusUpdate(fcmToken, { status, storeName }) {
  */
 async function sendNewOrderToStaff(storeId, { orderId, storeName, itemCount, grandTotal }) {
   const User = require('../models/User');
+  const { RoleGroups } = require('../constants/roles');
   const staffUsers = await User.find({
     storeId,
-    role: { $in: ['staff', 'admin'] },
+    roles: { $in: RoleGroups.STORE_OPERATORS },
     fcmToken: { $ne: null },
   });
 

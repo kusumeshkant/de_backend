@@ -15,6 +15,7 @@ const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const Store = require('./models/Store');
 const User = require('./models/User');
+const { Roles } = require('./constants/roles');
 
 // ── Firebase Admin init ────────────────────────────────────────────────────────
 if (!admin.apps.length) {
@@ -67,7 +68,7 @@ async function upsertMongoUser({ firebase_uid, name, email, storeId }) {
       firebase_uid,
       name,
       email,
-      role: 'staff',
+      roles: [Roles.STAFF],
       storeId,
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }

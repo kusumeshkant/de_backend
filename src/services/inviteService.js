@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { Resend } = require('resend');
 const StaffInvite = require('../models/StaffInvite');
 const User = require('../models/User');
+const { Roles, RoleGroups } = require('../constants/roles');
 
 // ── Invite code generator ─────────────────────────────────────────────────────
 // Format: DQ-XXXX-XXXX (e.g. DQ-A3FX-9K2M) — easy to read, easy to type
@@ -145,10 +146,10 @@ async function validateInviteToken(token) {
 async function acceptInvite({ token, uid }) {
   const invite = await validateInviteToken(token);
 
-  // Add 'staff' role without removing existing roles (customer stays intact)
+  // Add staff role without removing existing roles (customer stays intact)
   const user = await User.findOneAndUpdate(
     { firebase_uid: uid },
-    { $addToSet: { roles: 'staff' }, $set: { storeId: invite.storeId } },
+    { $addToSet: { roles: Roles.STAFF }, $set: { storeId: invite.storeId } },
     { new: true }
   );
   if (!user) throw new Error('User not found. Please sign in and try again.');
@@ -160,13 +161,13 @@ async function acceptInvite({ token, uid }) {
 }
 
 async function getStoreStaff(storeId) {
-  return User.find({ storeId, roles: { $in: ['staff', 'admin'] } }).sort({ name: 1 });
+  return User.find({ storeId, roles: { $in: RoleGroups.STORE_OPERATORS } }).sort({ name: 1 });
 }
 
 async function removeStaff(userId) {
   // Pull staff role, keep customer role, clear storeId
   await User.findByIdAndUpdate(userId, {
-    $pull: { roles: 'staff' },
+    $pull: { roles: Roles.STAFF },
     $set: { storeId: null },
   });
   return true;

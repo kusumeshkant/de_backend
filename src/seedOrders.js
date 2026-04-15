@@ -4,6 +4,7 @@ const Store = require('./models/Store');
 const Product = require('./models/Product');
 const Order = require('./models/Order');
 const User = require('./models/User');
+const { Roles } = require('./constants/roles');
 
 const TAX_RATE = 0.05;
 
@@ -20,13 +21,13 @@ async function seedOrders() {
     console.log('Connected to MongoDB');
 
     // Find or create a test customer user
-    let customer = await User.findOne({ role: 'customer' });
+    let customer = await User.findOne({ roles: Roles.CUSTOMER });
     if (!customer) {
       customer = await User.create({
         firebase_uid: 'test_customer_seed_uid',
         name: 'Test Customer',
         email: 'testcustomer@dq.com',
-        role: 'customer',
+        roles: [Roles.CUSTOMER],
       });
       console.log('Created test customer user');
     } else {

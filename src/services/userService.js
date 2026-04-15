@@ -1,13 +1,14 @@
 const User = require('../models/User');
+const { Roles, RoleGroups } = require('../constants/roles');
 
 /**
  * Returns an existing user document, or creates one on first login.
- * New users default to roles: ['customer'].
+ * New users default to roles: [Roles.CUSTOMER].
  */
 async function getOrCreateUser({ uid, phone, email }) {
   let user = await User.findOne({ firebase_uid: uid });
   if (!user) {
-    user = new User({ firebase_uid: uid, phone, email, roles: ['customer'] });
+    user = new User({ firebase_uid: uid, phone, email, roles: [Roles.CUSTOMER] });
     await user.save();
   }
   return user;
@@ -35,7 +36,7 @@ async function updateFcmToken(userId, fcmToken) {
 
 /** Returns all users who have staff or admin role */
 async function getAllStaff(storeId = null) {
-  const filter = { roles: { $in: ['staff', 'admin'] } };
+  const filter = { roles: { $in: RoleGroups.STORE_OPERATORS } };
   if (storeId) filter.storeId = storeId;
   return await User.find(filter).sort({ name: 1 });
 }
@@ -51,14 +52,14 @@ async function updateUserRole(userId, role, storeId) {
 async function upgradeToAdmin(userId, storeId) {
   return await User.findByIdAndUpdate(
     userId,
-    { $addToSet: { roles: 'admin' }, $set: { storeId } },
+    { $addToSet: { roles: Roles.ADMIN }, $set: { storeId } },
     { new: true }
   );
 }
 
 /** Silently adds 'customer' role if not already present */
 async function ensureCustomerRole(userId) {
-  await User.findByIdAndUpdate(userId, { $addToSet: { roles: 'customer' } });
+  await User.findByIdAndUpdate(userId, { $addToSet: { roles: Roles.CUSTOMER } });
 }
 
 module.exports = {
