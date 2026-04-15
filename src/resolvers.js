@@ -1,5 +1,5 @@
 const { GraphQLError } = require('graphql');
-const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, upgradeToAdmin, getUserByEmail } = require('./services/userService');
+const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
@@ -103,20 +103,40 @@ const resolvers = {
         let user;
 
         if (appId === 'CUSTOMER') {
-          // Auto-create: new customers register through the customer app.
-          user = await getOrCreateUser(context.user);
+          // Step 1: look up the user WITHOUT auto-creating first.
+          // This prevents a staff-invited user (whose firebase_uid exists in
+          // MongoDB as staff-only) from being silently created as a customer
+          // on their first DQ App login.
+          user = await User.findOne({ firebase_uid: context.user.uid });
 
-          if (hasRole(user, 'admin')) {
-            throw new GraphQLError(
-              'This account is registered as a store admin. Please use the DQ Admin app, or sign up with a different email to shop as a customer.',
-              { extensions: { code: 'FORBIDDEN', hint: 'ADMIN' } }
-            );
-          }
-          if (hasRole(user, 'staff')) {
-            throw new GraphQLError(
-              'This account is registered as a store staff member. Please use the DQ Staff app, or sign up with a different email to shop as a customer.',
-              { extensions: { code: 'FORBIDDEN', hint: 'STAFF' } }
-            );
+          if (user) {
+            // Existing user — allow if they hold the customer role.
+            // A dual-role account (customer + staff, or customer + admin) IS
+            // allowed — the customer role is what matters here, not whether
+            // they also have another role.
+            if (!hasRole(user, 'customer')) {
+              if (hasRole(user, 'admin')) {
+                throw new GraphQLError(
+                  'This account is registered as a store admin. To shop on DQ, open the Sign Up screen and tap "Continue with Google" — it will add a customer profile to your account.',
+                  { extensions: { code: 'FORBIDDEN', hint: 'ADMIN_NO_CUSTOMER' } }
+                );
+              }
+              if (hasRole(user, 'staff')) {
+                throw new GraphQLError(
+                  'This account is registered as a store staff member. To shop on DQ, open the Sign Up screen and tap "Continue with Google" — it will add a customer profile to your account.',
+                  { extensions: { code: 'FORBIDDEN', hint: 'STAFF_NO_CUSTOMER' } }
+                );
+              }
+              // Has unrecognised roles, no customer — block generically
+              throw new GraphQLError(
+                'This account does not have customer access. Please sign up on the DQ App to shop.',
+                { extensions: { code: 'FORBIDDEN', hint: 'NO_CUSTOMER' } }
+              );
+            }
+            // user has 'customer' role — fall through to return profile
+          } else {
+            // First-ever login to DQ App — safe to auto-create as customer.
+            user = await getOrCreateUser(context.user);
           }
 
         } else if (appId === 'STAFF') {
@@ -492,6 +512,36 @@ const resolvers = {
   Mutation: {
 
     // ── Any authenticated user ────────────────────────────────────────────────
+
+    /**
+     * Called by the DQ App (customer app) signup flow when a staff or admin
+     * Google account wants to also shop as a customer.
+     *
+     * Adds 'customer' to the roles array without touching existing roles.
+     * Customer is the lowest-privilege role — no guard beyond authentication
+     * is needed. Idempotent: safe to call even if already a customer.
+     */
+    registerAsCustomer: async (_, __, context) => {
+      requireAuth(context);
+      try {
+        const user = await User.findOne({ firebase_uid: context.user.uid });
+        if (!user) {
+          // First-ever login — create as customer
+          return await getOrCreateUser(context.user);
+        }
+        if (hasRole(user, 'customer')) {
+          // Already a customer — idempotent, return as-is
+          return await getProfile(user._id);
+        }
+        // Add customer role without touching other roles
+        await ensureCustomerRole(user._id);
+        logger.info(`registerAsCustomer: uid=${context.user.uid} previous_roles=[${user.roles}] — customer role added`);
+        return await getProfile(user._id);
+      } catch (error) {
+        logger.error(`registerAsCustomer error: ${error.message}`);
+        throw error;
+      }
+    },
 
     /**
      * Called by dq_admin signup immediately after Firebase account creation.

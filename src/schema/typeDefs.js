@@ -258,6 +258,11 @@ const typeDefs = `#graphql
   }
 
   type Mutation {
+    # Customer self-registration — adds 'customer' role to an authenticated user.
+    # Safe to call from the DQ App signup flow when a staff or admin account
+    # wants to also shop as a customer. Customer is the lowest-privilege role.
+    registerAsCustomer: User!
+
     # Admin self-registration — adds 'admin' to roles on first signup via dq_admin app
     registerAdmin: User!
 
