@@ -27,6 +27,10 @@ const _cache = new Map();
  * @param {string} storeId  MongoDB ObjectId as string
  */
 async function _getSubscriptionContext(storeId) {
+  // Kill switch: SUBSCRIPTION_ENABLED=false → treat every store as having no subscription.
+  // All feature checks will return false/empty — safe for Phase 1 which never calls these.
+  if (process.env.SUBSCRIPTION_ENABLED === 'false') return null;
+
   const now    = Date.now();
   const cached = _cache.get(storeId);
   if (cached && cached.expiresAt > now) return cached;
