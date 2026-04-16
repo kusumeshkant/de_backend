@@ -77,10 +77,13 @@ async function createStore({ name, address, lat, lon, storeCode }, triggeredByUi
 
   // Every new store starts on a trial plan automatically.
   // Fire-and-forget — don't fail store creation if subscription setup fails.
-  try {
-    await startTrial(store._id, triggeredByUid);
-  } catch (err) {
-    console.error(`[storeService] startTrial failed for store ${store._id}: ${err.message}`);
+  // Kill switch: set SUBSCRIPTION_ENABLED=false in env to disable entirely.
+  if (process.env.SUBSCRIPTION_ENABLED !== 'false') {
+    try {
+      await startTrial(store._id, triggeredByUid);
+    } catch (err) {
+      console.error(`[storeService] startTrial failed for store ${store._id}: ${err.message}`);
+    }
   }
 
   return store;
