@@ -75,6 +75,7 @@ function _isAccessible(status) {
  * @param {number} [addCount=1]  How many new items will be added (for batch ops)
  */
 async function assertLimitNotReached(storeId, limitKey, addCount = 1) {
+  if (process.env.SUBSCRIPTION_ENABLED === 'false') return; // Kill switch
   const { sub, plan } = await _getSubAndPlan(storeId);
   if (!sub || !plan) return; // No subscription → no cap (new store edge case)
   if (!_isAccessible(sub.status)) return; // Already expired — other guards handle this
