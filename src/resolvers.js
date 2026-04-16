@@ -7,6 +7,14 @@ const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, del
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
 const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
+const {
+  getStoreSubscription,
+  getAvailablePlans,
+  cancelSubscription,
+  setAdminOverride,
+} = require('./services/subscription_service');
+const { getFeatureAccessMap } = require('./services/feature_access_service');
+const { getRemainingUsage }   = require('./services/plan_limit_service');
 const logger = require('./utils/logger_cf');
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -741,7 +749,7 @@ const resolvers = {
       try {
         const user = await getOrCreateUser(context.user);
         requireRole(user, Roles.ADMIN);
-        return await createStore({ name, address, lat, lon, storeCode });
+        return await createStore({ name, address, lat, lon, storeCode }, context.user.uid);
       } catch (error) {
         logger.error(`createStore error: ${error.message}`);
         throw error;
@@ -969,6 +977,118 @@ const resolvers = {
   StoreStats: {
     store: (ss) => ss.store,
   },
+
+  // ── Subscription resolvers (field-level) ──────────────────────────────────
+
+  StoreSubscription: {
+    id:   (sub) => sub._id.toString(),
+    plan: (sub) => sub.planId,    // populated by getStoreSubscription()
+    usageCounters: (sub) => sub.usageCounters ?? {
+      staffCount: 0, productCount: 0, ordersThisMonth: 0, lastCountedAt: null,
+    },
+    currentPeriodStart: (sub) => sub.currentPeriodStart?.toISOString() ?? null,
+    currentPeriodEnd:   (sub) => sub.currentPeriodEnd?.toISOString() ?? null,
+    trialEndsAt:        (sub) => sub.trialEndsAt?.toISOString() ?? null,
+    gracePeriodEndsAt:  (sub) => sub.gracePeriodEndsAt?.toISOString() ?? null,
+    nextBillingAt:      (sub) => sub.nextBillingAt?.toISOString() ?? null,
+    cancelledAt:        (sub) => sub.cancelledAt?.toISOString() ?? null,
+    overrideExpiresAt:  (sub) => sub.overrideExpiresAt?.toISOString() ?? null,
+    billingCycle:       (sub) => sub.billingCycle ?? 'none',
+    autoRenew:          (sub) => sub.autoRenew ?? true,
+    isAdminOverride:    (sub) => sub.isAdminOverride ?? false,
+  },
+
+  SubscriptionPlan: {
+    id:          (plan) => plan._id.toString(),
+    description: (plan) => plan.description ?? '',
+    trialDays:   (plan) => plan.trialDays ?? 0,
+    graceDays:   (plan) => plan.graceDays ?? 7,
+    isRecommended: (plan) => plan.isRecommended ?? false,
+    displayOrder:  (plan) => plan.displayOrder ?? 99,
+  },
+};
+
+// ── Subscription queries & mutations ─────────────────────────────────────────
+// Injected separately to keep the resolver map readable.
+
+resolvers.Query.availablePlans = async () => {
+  try {
+    return await getAvailablePlans();
+  } catch (err) {
+    logger.error(`availablePlans error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Query.storeSubscription = async (_, { storeId }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    return await getStoreSubscription(storeId);
+  } catch (err) {
+    logger.error(`storeSubscription error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Query.featureAccessMap = async (_, { storeId }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    return await getFeatureAccessMap(storeId);
+  } catch (err) {
+    logger.error(`featureAccessMap error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Query.planUsage = async (_, { storeId, limitKey }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    const result = await getRemainingUsage(storeId, limitKey);
+    return { limitKey, ...result };
+  } catch (err) {
+    logger.error(`planUsage error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Mutation.cancelSubscription = async (_, { storeId, cancelReason }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    return await cancelSubscription(storeId, {
+      cancelReason,
+      triggeredBy:     context.user.uid,
+      triggeredByRole: Roles.ADMIN,
+    });
+  } catch (err) {
+    logger.error(`cancelSubscription error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Mutation.setAdminSubscriptionOverride = async (_, { storeId, planName, days, overrideReason }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    return await setAdminOverride(storeId, {
+      planName,
+      days,
+      overrideReason,
+      triggeredBy:     context.user.uid,
+      triggeredByRole: Roles.ADMIN,
+    });
+  } catch (err) {
+    logger.error(`setAdminSubscriptionOverride error: ${err.message}`);
+    throw err;
+  }
 };
 
 module.exports = resolvers;

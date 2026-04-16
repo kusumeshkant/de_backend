@@ -1,4 +1,5 @@
 const Store = require('../models/Store');
+const { startTrial } = require('./subscription_service');
 
 async function getStores() {
   return await Store.find({ isActive: true }).sort({ name: 1 });
@@ -69,10 +70,20 @@ async function _generateStoreCode(name) {
   return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
 }
 
-async function createStore({ name, address, lat, lon, storeCode }) {
-  const code = storeCode?.trim().toUpperCase() || await _generateStoreCode(name);
+async function createStore({ name, address, lat, lon, storeCode }, triggeredByUid = 'system') {
+  const code  = storeCode?.trim().toUpperCase() || await _generateStoreCode(name);
   const store = new Store({ name, storeCode: code, address, latitude: lat, longitude: lon });
-  return await store.save();
+  await store.save();
+
+  // Every new store starts on a trial plan automatically.
+  // Fire-and-forget — don't fail store creation if subscription setup fails.
+  try {
+    await startTrial(store._id, triggeredByUid);
+  } catch (err) {
+    console.error(`[storeService] startTrial failed for store ${store._id}: ${err.message}`);
+  }
+
+  return store;
 }
 
 async function updateStore(id, { name, address, lat, lon, storeCode, isActive }) {
