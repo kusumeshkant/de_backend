@@ -31,7 +31,6 @@ const { PLAN_NAMES, UNLIMITED } = require('../constants/feature_keys');
 //   Trial        — every new store, 14 days, same features as Growth
 //   Grandfathered — existing stores, 90 days, same features as Pro
 //
-// maxProducts = UNLIMITED on all plans — product uploads are never blocked.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PLANS = [
@@ -54,7 +53,6 @@ const PLANS = [
     },
     limits: {
       maxStaff:           5,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  500,
       maxStores:          1,
     },
@@ -84,7 +82,6 @@ const PLANS = [
     },
     limits: {
       maxStaff:           15,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  5000,
       maxStores:          1,
     },
@@ -114,7 +111,6 @@ const PLANS = [
     },
     limits: {
       maxStaff:           UNLIMITED,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  UNLIMITED,
       maxStores:          3,
     },
@@ -145,7 +141,6 @@ const PLANS = [
     },
     limits: {
       maxStaff:           15,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  5000,
       maxStores:          1,
     },
@@ -177,9 +172,8 @@ const PLANS = [
     },
     limits: {
       maxStaff:           UNLIMITED,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  UNLIMITED,
-      maxStores:          1,
+      maxStores:          UNLIMITED,
     },
     trialDays:     0,
     graceDays:     30,

@@ -34,10 +34,9 @@ const FEATURE_KEYS = Object.freeze({
  * @readonly
  */
 const PLAN_LIMITS = Object.freeze({
-  MAX_STAFF:              'maxStaff',
-  MAX_PRODUCTS:           'maxProducts',
-  MAX_ORDERS_PER_MONTH:   'maxOrdersPerMonth',
-  MAX_STORES:             'maxStores',
+  MAX_STAFF:            'maxStaff',
+  MAX_ORDERS_PER_MONTH: 'maxOrdersPerMonth',
+  MAX_STORES:           'maxStores',
 });
 
 /**

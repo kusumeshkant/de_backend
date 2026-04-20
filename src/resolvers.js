@@ -1,5 +1,6 @@
 const { GraphQLError } = require('graphql');
 const { Roles, AppId, RoleHint, RoleGroups } = require('./constants/roles');
+const { PLAN_LIMITS } = require('./constants/feature_keys');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
@@ -14,7 +15,7 @@ const {
   setAdminOverride,
 } = require('./services/subscription_service');
 const { getFeatureAccessMap } = require('./services/feature_access_service');
-const { getRemainingUsage }   = require('./services/plan_limit_service');
+const { getRemainingUsage, assertLimitNotReached, refreshUsageCounters } = require('./services/plan_limit_service');
 const logger = require('./utils/logger_cf');
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -647,6 +648,8 @@ const resolvers = {
         const user = await getOrCreateUser(context.user);
         requireRole(user, Roles.CUSTOMER);
 
+        await assertLimitNotReached(args.storeId, PLAN_LIMITS.MAX_ORDERS_PER_MONTH);
+
         const order = await createOrder({
           userId: user._id,
           razorpayOrderId,
@@ -667,6 +670,8 @@ const resolvers = {
           itemCount: order.items?.length ?? 1,
           grandTotal: order.grandTotal,
         }).catch(() => {});
+
+        refreshUsageCounters(order.storeId).catch(() => {});
 
         return order;
       } catch (error) {
@@ -749,6 +754,11 @@ const resolvers = {
       try {
         const user = await getOrCreateUser(context.user);
         requireRole(user, Roles.ADMIN);
+        // First store is always allowed (no subscription exists yet).
+        // For subsequent stores, check MAX_STORES against the existing subscription.
+        if (user.storeId) {
+          await assertLimitNotReached(user.storeId, PLAN_LIMITS.MAX_STORES);
+        }
         return await createStore({ name, address, lat, lon, storeCode }, context.user.uid);
       } catch (error) {
         logger.error(`createStore error: ${error.message}`);
@@ -864,9 +874,12 @@ const resolvers = {
       try {
         const user = await getOrCreateUser(context.user);
         requireRole(user, Roles.ADMIN);
+        await assertLimitNotReached(storeId, PLAN_LIMITS.MAX_STAFF);
         const Store = require('./models/Store');
         const store = await Store.findById(storeId);
-        return await inviteStaff({ email, name, storeId, storeName: store?.name ?? 'Your Store' });
+        const result = await inviteStaff({ email, name, storeId, storeName: store?.name ?? 'Your Store' });
+        refreshUsageCounters(storeId).catch(() => {});
+        return result;
       } catch (error) {
         logger.error(`inviteStaff error: ${error.message}`);
         throw error;
@@ -984,7 +997,7 @@ const resolvers = {
     id:   (sub) => sub._id.toString(),
     plan: (sub) => sub.planId,    // populated by getStoreSubscription()
     usageCounters: (sub) => sub.usageCounters ?? {
-      staffCount: 0, productCount: 0, ordersThisMonth: 0, lastCountedAt: null,
+      staffCount: 0, ordersThisMonth: 0, storeCount: 1, lastCountedAt: null,
     },
     currentPeriodStart: (sub) => sub.currentPeriodStart?.toISOString() ?? null,
     currentPeriodEnd:   (sub) => sub.currentPeriodEnd?.toISOString() ?? null,

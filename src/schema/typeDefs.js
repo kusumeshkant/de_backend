@@ -543,7 +543,6 @@ const typeDefs = `#graphql
 
   type PlanLimits {
     maxStaff: Int!
-    maxProducts: Int!
     maxOrdersPerMonth: Int!
     maxStores: Int!
   }
@@ -564,8 +563,8 @@ const typeDefs = `#graphql
 
   type UsageCounters {
     staffCount: Int!
-    productCount: Int!
     ordersThisMonth: Int!
+    storeCount: Int!
     lastCountedAt: String
   }
 

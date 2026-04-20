@@ -45,7 +45,6 @@ const subscriptionPlanSchema = new mongoose.Schema(
     // -1 (UNLIMITED sentinel) means no cap. The service layer enforces this.
     limits: {
       maxStaff:            { type: Number, default: 1 },
-      maxProducts:         { type: Number, default: 50 },
       maxOrdersPerMonth:   { type: Number, default: 100 },
       maxStores:           { type: Number, default: 1 },
     },
