@@ -1,16 +1,17 @@
 const { GraphQLError } = require('graphql');
 const { Roles, AppId, RoleHint, RoleGroups } = require('./constants/roles');
 const { PLAN_LIMITS } = require('./constants/feature_keys');
-const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
+const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, getStaffPaginated, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
-const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
-const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
-const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
+const { getProductByBarcode, getStoreProducts, getProductsPaginated, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
+const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated } = require('./services/storeService');
+const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getOrdersPaginated, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
 const {
   getStoreSubscription,
   getAvailablePlans,
+  activatePlan,
   cancelSubscription,
   setAdminOverride,
 } = require('./services/subscription_service');
@@ -252,6 +253,18 @@ const resolvers = {
       }
     },
 
+    storeProductsPaginated: async (_, { storeId, first, after, search, sortBy, sortDir, filters }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        return await getProductsPaginated(storeId, { first, after, search, sortBy, sortDir, filters });
+      } catch (error) {
+        logger.error(`storeProductsPaginated error: ${error.message}`);
+        throw error;
+      }
+    },
+
     validateInviteToken: async (_, { token }, context) => {
       requireAuth(context);
       try {
@@ -273,6 +286,45 @@ const resolvers = {
         return await getAllOrders({ storeId: effectiveStoreId, status });
       } catch (error) {
         logger.error(`allOrders error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    allOrdersPaginated: async (_, { first, after, search, storeId, status }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
+        return await getOrdersPaginated({ storeId: effectiveStoreId, first, after, search, filters: status ? { status } : {} });
+      } catch (error) {
+        logger.error(`allOrdersPaginated error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    allStaffPaginated: async (_, { first, after, search, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
+        return await getStaffPaginated({ first, after, search, storeId: effectiveStoreId });
+      } catch (error) {
+        logger.error(`allStaffPaginated error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    storesPaginated: async (_, { first, after, search, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
+        return await getStoresPaginated({ first, after, search, storeId: effectiveStoreId });
+      } catch (error) {
+        logger.error(`storesPaginated error: ${error.message}`);
         throw error;
       }
     },
@@ -1100,6 +1152,49 @@ resolvers.Mutation.setAdminSubscriptionOverride = async (_, { storeId, planName,
     });
   } catch (err) {
     logger.error(`setAdminSubscriptionOverride error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Mutation.createSubscriptionOrder = async (_, { storeId, planName, billingCycle }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    const plans = await getAvailablePlans();
+    const plan = plans.find(p => p.name === planName);
+    if (!plan) {
+      throw new GraphQLError(`Plan '${planName}' not found or not available`, { extensions: { code: 'NOT_FOUND' } });
+    }
+    const amount = billingCycle === 'annual' ? plan.price.annual : plan.price.monthly;
+    if (!amount || amount <= 0) {
+      throw new GraphQLError('Invalid plan amount', { extensions: { code: 'BAD_REQUEST' } });
+    }
+    return await createRazorpayOrder(amount);
+  } catch (err) {
+    logger.error(`createSubscriptionOrder error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Mutation.confirmSubscriptionPayment = async (_, { storeId, planName, billingCycle, razorpayOrderId, razorpayPaymentId, razorpaySignature }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    const isValid = verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+    if (!isValid) {
+      throw new GraphQLError('Payment verification failed — signature mismatch', { extensions: { code: 'PAYMENT_VERIFICATION_FAILED' } });
+    }
+    return await activatePlan(storeId, {
+      planName,
+      billingCycle: billingCycle === 'annual' ? 'annual' : 'monthly',
+      paymentId:       razorpayPaymentId,
+      triggeredBy:     context.user.uid,
+      triggeredByRole: Roles.ADMIN,
+    });
+  } catch (err) {
+    logger.error(`confirmSubscriptionPayment error: ${err.message}`);
     throw err;
   }
 };

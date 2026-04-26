@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const { Roles, RoleGroups } = require('../constants/roles');
 
@@ -62,12 +63,54 @@ async function ensureCustomerRole(userId) {
   await User.findByIdAndUpdate(userId, { $addToSet: { roles: Roles.CUSTOMER } });
 }
 
+// ── Cursor helpers ─────────────────────────────────────────────────────────────
+
+function _encodeCursor(id) {
+  return Buffer.from(JSON.stringify({ id: id.toString() })).toString('base64');
+}
+
+function _decodeCursor(cursor) {
+  try { return JSON.parse(Buffer.from(cursor, 'base64').toString('utf8')); } catch { return null; }
+}
+
+// ── Paginated staff ────────────────────────────────────────────────────────────
+
+async function getStaffPaginated({ first = 30, after = null, search = null, storeId = null } = {}) {
+  const limit = Math.min(Math.max(1, first || 30), 100);
+
+  const baseFilter = { roles: { $in: RoleGroups.STORE_OPERATORS } };
+  if (storeId) baseFilter.storeId = storeId;
+  if (search)  baseFilter.$or = [
+    { name:  { $regex: search, $options: 'i' } },
+    { email: { $regex: search, $options: 'i' } },
+    { phone: { $regex: search, $options: 'i' } },
+  ];
+
+  const decoded = after ? _decodeCursor(after) : null;
+  const cursorFilter = decoded
+    ? { _id: { $gt: mongoose.Types.ObjectId.createFromHexString(decoded.id) } }
+    : {};
+
+  const [rows, totalCount] = await Promise.all([
+    User.find({ ...baseFilter, ...cursorFilter }).sort({ name: 1, _id: 1 }).limit(limit + 1),
+    User.countDocuments(baseFilter),
+  ]);
+
+  const hasNext = rows.length > limit;
+  if (hasNext) rows.pop();
+  const lastRow    = rows[rows.length - 1];
+  const nextCursor = hasNext && lastRow ? _encodeCursor(lastRow._id) : null;
+
+  return { items: rows, meta: { hasNext, nextCursor, totalCount } };
+}
+
 module.exports = {
   getOrCreateUser,
   getProfile,
   updateProfile,
   updateFcmToken,
   getAllStaff,
+  getStaffPaginated,
   updateUserRole,
   upgradeToAdmin,
   ensureCustomerRole,

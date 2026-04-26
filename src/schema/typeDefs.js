@@ -1,4 +1,43 @@
 const typeDefs = `#graphql
+  # ── Shared pagination types ───────────────────────────────────────────────────
+
+  type PageMeta {
+    hasNext:     Boolean!
+    nextCursor:  String
+    totalCount:  Int!
+  }
+
+  type ProductPage {
+    items: [Product!]!
+    meta:  PageMeta!
+  }
+
+  input ProductFiltersInput {
+    brand:        String
+    gender:       String
+    categoryMain: String
+    inStock:      Boolean   # true = stock > 0 only
+    lowStock:     Boolean   # true = stock <= reorderLevel only
+  }
+
+  type OrderPage {
+    items:          [Order!]!
+    meta:           PageMeta!
+    activeCount:    Int!
+    completedCount: Int!
+    cancelledCount: Int!
+  }
+
+  type UserPage {
+    items: [User!]!
+    meta:  PageMeta!
+  }
+
+  type StorePage {
+    items: [Store!]!
+    meta:  PageMeta!
+  }
+
   type ProductCategory {
     main: String
     sub: String
@@ -180,6 +219,31 @@ const typeDefs = `#graphql
 
     # Admin: all products for a store (requires Firebase auth)
     storeProducts(storeId: ID!): [Product!]!
+
+    # Admin: cursor-paginated products — preferred for list screens (requires Firebase auth)
+    # first:   page size (default 30, max 100)
+    # after:   opaque cursor from previous meta.nextCursor
+    # search:  full-text match on name / barcode / brand
+    # sortBy:  name | price | stock | createdAt (default: createdAt)
+    # sortDir: asc | desc (default: desc for createdAt, asc for others)
+    storeProductsPaginated(
+      storeId:  ID!
+      first:    Int
+      after:    String
+      search:   String
+      sortBy:   String
+      sortDir:  String
+      filters:  ProductFiltersInput
+    ): ProductPage!
+
+    # Admin: cursor-paginated orders (requires Firebase auth)
+    allOrdersPaginated(first: Int, after: String, search: String, storeId: ID, status: String): OrderPage!
+
+    # Admin: cursor-paginated staff (requires Firebase auth)
+    allStaffPaginated(first: Int, after: String, search: String, storeId: ID): UserPage!
+
+    # Admin: cursor-paginated stores (requires Firebase auth)
+    storesPaginated(first: Int, after: String, search: String, storeId: ID): StorePage!
 
     # Check stock availability before payment — returns names of out-of-stock items (requires Firebase auth)
     validateCartStock(storeId: ID!, items: [OrderItemInput!]!): [String!]!
@@ -381,6 +445,19 @@ const typeDefs = `#graphql
 
     # Subscription: admin override — grant a store elevated plan access for N days (requires admin auth)
     setAdminSubscriptionOverride(storeId: ID!, planName: String!, days: Int!, overrideReason: String): StoreSubscription!
+
+    # Subscription purchase — Step 1: create a Razorpay order for a plan upgrade (requires admin auth)
+    createSubscriptionOrder(storeId: ID!, planName: String!, billingCycle: String!): RazorpayOrder!
+
+    # Subscription purchase — Step 2: verify payment signature and activate the plan (requires admin auth)
+    confirmSubscriptionPayment(
+      storeId: ID!
+      planName: String!
+      billingCycle: String!
+      razorpayOrderId: String!
+      razorpayPaymentId: String!
+      razorpaySignature: String!
+    ): StoreSubscription!
   }
 
   type ProductStat {
