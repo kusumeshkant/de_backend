@@ -45,7 +45,6 @@ const subscriptionPlanSchema = new mongoose.Schema(
     // -1 (UNLIMITED sentinel) means no cap. The service layer enforces this.
     limits: {
       maxStaff:            { type: Number, default: 1 },
-      maxProducts:         { type: Number, default: 50 },
       maxOrdersPerMonth:   { type: Number, default: 100 },
       maxStores:           { type: Number, default: 1 },
     },
@@ -55,10 +54,11 @@ const subscriptionPlanSchema = new mongoose.Schema(
     graceDays:  { type: Number, default: 7 },
 
     // ── Catalogue visibility ──────────────────────────────────────────────────
-    isActive:       { type: Boolean, default: true },
-    isRecommended:  { type: Boolean, default: false },
-    isVisible:      { type: Boolean, default: true },   // shown in pricing page
-    displayOrder:   { type: Number, default: 99 },
+    isActive:         { type: Boolean, default: true },
+    isRecommended:    { type: Boolean, default: false },
+    isVisible:        { type: Boolean, default: true },   // shown in pricing page
+    isCustomPricing:  { type: Boolean, default: false },  // true = Enterprise; UI shows "Contact Us" instead of Razorpay
+    displayOrder:     { type: Number, default: 99 },
 
     // ── Extensible metadata ───────────────────────────────────────────────────
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },

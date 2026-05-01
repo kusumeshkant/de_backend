@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Store = require('../models/Store');
 const Product = require('../models/Product');
@@ -785,6 +786,82 @@ async function getMonthlyRevenue(storeId, year) {
   return Object.values(buckets);
 }
 
+// ── Cursor helpers ─────────────────────────────────────────────────────────────
+
+function _encodeCursor(id, sortValue) {
+  return Buffer.from(JSON.stringify({ id: id.toString(), v: sortValue?.toString() ?? '' })).toString('base64');
+}
+
+function _decodeCursor(cursor) {
+  try { return JSON.parse(Buffer.from(cursor, 'base64').toString('utf8')); } catch { return null; }
+}
+
+// ── Paginated orders ────────────────────────────────────────────────────────────
+
+async function getOrdersPaginated({
+  storeId = null,
+  first = 30,
+  after = null,
+  search = null,
+  sortBy = 'createdAt',
+  sortDir = null,
+  filters = {},
+} = {}) {
+  const VALID = new Set(['createdAt', 'grandTotal', '_id']);
+  const sort  = VALID.has(sortBy) ? sortBy : 'createdAt';
+  const dir   = sortDir === 'asc' ? 1 : -1;
+  const limit = Math.min(Math.max(1, first || 30), 100);
+
+  const baseFilter = {};
+  if (storeId)         baseFilter.storeId = storeId;
+  if (filters.status)  baseFilter.status  = filters.status;
+  if (search)          baseFilter.$or = [{ storeName: { $regex: search, $options: 'i' } }];
+
+  const decoded = after ? _decodeCursor(after) : null;
+  let cursorFilter = {};
+  if (decoded) {
+    const oid = mongoose.Types.ObjectId.createFromHexString(decoded.id);
+    if (sort === '_id') {
+      cursorFilter = dir === 1 ? { _id: { $gt: oid } } : { _id: { $lt: oid } };
+    } else {
+      const op = dir === 1 ? '$gt' : '$lt';
+      const sortVal = sort === 'grandTotal' ? parseFloat(decoded.v)
+                    : sort === 'createdAt'  ? new Date(decoded.v)
+                    : decoded.v;
+      cursorFilter = { $or: [
+        { [sort]: { [op]: sortVal } },
+        { [sort]: sortVal, _id: { [op]: oid } },
+      ]};
+    }
+  }
+
+  const storeScope = storeId ? { storeId } : {};
+  const [rows, activeCount, completedCount, cancelledCount] = await Promise.all([
+    Order.find({ ...baseFilter, ...cursorFilter })
+      .sort(sort === '_id' ? { _id: dir } : { [sort]: dir, _id: dir })
+      .limit(limit + 1)
+      .select('storeId storeName storeCode total tax grandTotal status paymentStatus createdAt items staffActions flaggedIssue'),
+    Order.countDocuments({ ...storeScope, status: { $in: ['pending', 'preparing', 'ready'] } }),
+    Order.countDocuments({ ...storeScope, status: 'completed' }),
+    Order.countDocuments({ ...storeScope, status: 'cancelled' }),
+  ]);
+
+  const hasNext = rows.length > limit;
+  if (hasNext) rows.pop();
+  const lastRow   = rows[rows.length - 1];
+  const nextCursor = hasNext && lastRow
+    ? _encodeCursor(lastRow._id, sort === '_id' ? null : lastRow[sort])
+    : null;
+
+  return {
+    items: rows,
+    meta: { hasNext, nextCursor, totalCount: activeCount + completedCount + cancelledCount },
+    activeCount,
+    completedCount,
+    cancelledCount,
+  };
+}
+
 module.exports = {
   createOrder,
   getMyOrders,
@@ -794,6 +871,7 @@ module.exports = {
   updateOrderStatus,
   flagOrderIssue,
   getAllOrders,
+  getOrdersPaginated,
   getDashboardStats,
   getStoreStats,
   validateCartStock,

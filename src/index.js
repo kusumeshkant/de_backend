@@ -18,6 +18,28 @@ const resolvers = require('./resolvers');
 const { verifyToken } = require('./middleware/auth');
 const logger = require('./utils/logger');
 
+// ── CORS allowlist ────────────────────────────────────────────────────────────
+// Only origins listed here can send cross-origin requests to the API.
+// Mobile apps (Flutter) are not subject to CORS — this protects any web client
+// (dqstore.in, future admin web panel) from third-party sites making requests
+// on behalf of a logged-in user.
+const ALLOWED_ORIGINS = [
+  'https://dqstore.in',
+  'http://localhost:3000', // local development
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no Origin header (mobile apps, Postman, server-to-server)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin '${origin}' is not allowed`));
+    }
+  },
+  credentials: false,
+};
+
 const startServer = async () => {
   if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
 
@@ -38,19 +60,52 @@ const startServer = async () => {
     typeDefs,
     resolvers,
     validationRules: [depthLimit(7)],
+    // Apollo Server v4 disables introspection automatically in production
+    // (when NODE_ENV=production). Explicit override only needed in dev.
+    introspection: process.env.NODE_ENV !== 'production',
   });
 
   await server.start();
 
+  // User model — loaded once here so the context function doesn't require() it
+  // on every request (require() is cached, but explicit import is cleaner).
+  const User = require('./models/User');
+
   app.use(
     '/graphql',
     limiter,
-    cors(),
+    cors(corsOptions),
     express.json(),
     expressMiddleware(server, {
+      /**
+       * Request context — built once per GraphQL request, shared by all resolvers.
+       *
+       * Shape:
+       *   context.user   — Firebase identity  { uid, email, phone } | null
+       *   context.dbUser — MongoDB User doc    { _id, roles, ... }  | null
+       *
+       * Keeping backward compatibility: existing resolvers that read context.user
+       * continue to work unchanged. The new context.dbUser eliminates the
+       * per-resolver getOrCreateUser() call (N+1 MongoDB queries → 1 per request).
+       *
+       * User auto-creation (getOrCreateUser) intentionally stays in the
+       * validateAppAccess resolver — it is the explicit first-login gate and
+       * should only create documents when the user actively authenticates,
+       * not silently on every request.
+       */
       context: async ({ req }) => {
         const user = await verifyToken(req);
-        return { user };
+
+        if (!user) {
+          return { user: null, dbUser: null };
+        }
+
+        // Single MongoDB lookup per request — result shared across all resolvers.
+        // Using .lean() returns a plain JS object (faster, no Mongoose overhead)
+        // which is sufficient for read-only access in resolvers.
+        const dbUser = await User.findOne({ firebase_uid: user.uid }).lean() ?? null;
+
+        return { user, dbUser };
       },
     })
   );

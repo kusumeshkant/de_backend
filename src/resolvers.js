@@ -1,24 +1,40 @@
 const { GraphQLError } = require('graphql');
 const { Roles, AppId, RoleHint, RoleGroups } = require('./constants/roles');
-const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
+const { PLAN_LIMITS } = require('./constants/feature_keys');
+const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, getStaffPaginated, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
-const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff } = require('./services/notificationService_cf');
-const { getProductByBarcode, getStoreProducts, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
-const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore } = require('./services/storeService');
-const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
+const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff, sendPermissionRequestNotification, sendPermissionStatusNotification } = require('./services/notificationService_cf');
+const { getProductByBarcode, getStoreProducts, getProductsPaginated, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
+const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated } = require('./services/storeService');
+const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getOrdersPaginated, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
 const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
+const { requestPermission, getPendingRequests, getAllRequests, getMyRequests, approveRequest, rejectRequest, revokePermission, getStaffPermissions, checkPermission } = require('./services/permissionService');
+const { generateDiscountCode, validateDiscountCode, consumeDiscountCode, getDiscountLogs } = require('./services/discountService');
+const { logProductCreate, logProductUpdate, logProductDelete, getProductChangeLogs } = require('./services/auditLogService');
+const Product = require('./models/Product');
 const {
   getStoreSubscription,
   getAvailablePlans,
+  activatePlan,
   cancelSubscription,
   setAdminOverride,
 } = require('./services/subscription_service');
 const { getFeatureAccessMap } = require('./services/feature_access_service');
-const { getRemainingUsage }   = require('./services/plan_limit_service');
+const { getRemainingUsage, assertLimitNotReached, refreshUsageCounters } = require('./services/plan_limit_service');
 const logger = require('./utils/logger_cf');
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
+//
+// Request context shape (set by index.js):
+//   context.user   — Firebase identity { uid, email, phone } | null
+//   context.dbUser — MongoDB User doc  { _id, roles, ... }  | null
+//
+// Call order in every protected resolver:
+//   1. requireAuth(context)   — verifies Firebase token was valid
+//   2. requireDbUser(context) — verifies user exists in MongoDB
+//   3. requireRole(...)       — verifies the user holds a required role
 
+/** Throws UNAUTHENTICATED if no valid Firebase token was present in the request. */
 function requireAuth(context) {
   if (!context.user) {
     throw new GraphQLError('You must be logged in', {
@@ -27,20 +43,47 @@ function requireAuth(context) {
   }
 }
 
-/** Returns true if the DB user has ANY of the given roles. */
+/**
+ * Returns context.dbUser, or throws UNAUTHENTICATED if the MongoDB user
+ * document was not found.
+ *
+ * This can happen if:
+ *   - The user authenticated with Firebase but never called validateAppAccess
+ *     (which creates the document on first login).
+ *   - The MongoDB document was manually deleted.
+ *
+ * In both cases the correct response is to ask the user to log in again.
+ *
+ * @returns {Object} The MongoDB User document (lean plain object)
+ */
+function requireDbUser(context) {
+  if (!context.dbUser) {
+    throw new GraphQLError('Account not found. Please log in again.', {
+      extensions: { code: 'UNAUTHENTICATED' },
+    });
+  }
+  return context.dbUser;
+}
+
+/** Returns true if *user* (MongoDB doc) holds ANY of the given roles. */
 function hasRole(user, ...roles) {
   return roles.some(r => user.roles?.includes(r));
 }
 
 /**
- * Throws FORBIDDEN if the DB user does not have at least one of the given roles.
- * Use after getOrCreateUser / findUser to enforce per-resolver access control.
+ * Throws FORBIDDEN if *user* does not hold at least one of the given roles.
+ * Logs the rejection for the audit trail.
+ *
+ * @param {Object} user - MongoDB User document
+ * @param {...string} roles - Roles.CUSTOMER | Roles.STAFF | Roles.ADMIN
  */
 function requireRole(user, ...roles) {
   if (!hasRole(user, ...roles)) {
-    const roleStr = roles.join(' or ');
-    logger.warn(`RBAC: uid=${user.firebase_uid} roles=${user.roles} tried operation requiring ${roleStr}`);
-    throw new GraphQLError(`This operation requires ${roleStr} access`, {
+    const required = roles.join(' or ');
+    logger.warn(
+      `RBAC denied: uid=${user.firebase_uid} has [${user.roles}], needs [${required}]`
+    );
+    throw new GraphQLError(`This operation requires ${required} access`, {
       extensions: { code: 'FORBIDDEN' },
     });
   }
@@ -51,9 +94,15 @@ function requireRole(user, ...roles) {
 const resolvers = {
   Query: {
 
-    // ── Public ───────────────────────────────────────────────────────────────
+    // ── Public (no auth required) ─────────────────────────────────────────────
+    // Only store discovery queries are public — they contain no sensitive data.
 
-    productByBarcode: async (_, { barcode, storeId }) => {
+    // ── Authenticated — any logged-in role ────────────────────────────────────
+
+    // productByBarcode requires auth to prevent unauthenticated inventory scraping.
+    // Any valid Firebase session is accepted (customer, staff, or admin).
+    productByBarcode: async (_, { barcode, storeId }, context) => {
+      requireAuth(context);
       try {
         return await getProductByBarcode(barcode, storeId);
       } catch (error) {
@@ -81,12 +130,23 @@ const resolvers = {
     },
 
     // ── Any authenticated role ────────────────────────────────────────────────
+    //
+    // Pattern for all protected resolvers (replaces the old getOrCreateUser() call):
+    //
+    //   requireAuth(context);          — Firebase token was valid
+    //   const dbUser = requireDbUser(context);  — MongoDB doc pre-loaded in context
+    //   requireRole(dbUser, Roles.X);  — role check if needed
+    //
+    // context.dbUser is loaded once per request in index.js. No extra DB query needed.
 
     me: async (_, __, context) => {
       requireAuth(context);
+      const dbUser = requireDbUser(context);
       try {
-        const user = await getOrCreateUser(context.user);
-        return await getProfile(user._id);
+        // getProfile fetches the full Mongoose document (with virtuals).
+        // context.dbUser is a lean() plain object — suitable for role checks,
+        // but use the full document when you need Mongoose methods or virtuals.
+        return await getProfile(dbUser._id);
       } catch (error) {
         logger.error(`me error: ${error.message}`);
         throw error;
@@ -193,11 +253,11 @@ const resolvers = {
 
     stores: async (_, __, context) => {
       requireAuth(context);
+      const dbUser = requireDbUser(context);
+      requireRole(dbUser, Roles.STAFF, Roles.ADMIN);
       try {
-        const user = await getOrCreateUser(context.user);
-        requireRole(user, Roles.STAFF, Roles.ADMIN);
-        if (user.storeId) {
-          const store = await getStoreById(user.storeId.toString());
+        if (dbUser.storeId) {
+          const store = await getStoreById(dbUser.storeId.toString());
           return store ? [store] : [];
         }
         return await getStores();
@@ -251,6 +311,18 @@ const resolvers = {
       }
     },
 
+    storeProductsPaginated: async (_, { storeId, first, after, search, sortBy, sortDir, filters }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        return await getProductsPaginated(storeId, { first, after, search, sortBy, sortDir, filters });
+      } catch (error) {
+        logger.error(`storeProductsPaginated error: ${error.message}`);
+        throw error;
+      }
+    },
+
     validateInviteToken: async (_, { token }, context) => {
       requireAuth(context);
       try {
@@ -272,6 +344,45 @@ const resolvers = {
         return await getAllOrders({ storeId: effectiveStoreId, status });
       } catch (error) {
         logger.error(`allOrders error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    allOrdersPaginated: async (_, { first, after, search, storeId, status }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
+        return await getOrdersPaginated({ storeId: effectiveStoreId, first, after, search, filters: status ? { status } : {} });
+      } catch (error) {
+        logger.error(`allOrdersPaginated error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    allStaffPaginated: async (_, { first, after, search, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
+        return await getStaffPaginated({ first, after, search, storeId: effectiveStoreId });
+      } catch (error) {
+        logger.error(`allStaffPaginated error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    storesPaginated: async (_, { first, after, search, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
+        return await getStoresPaginated({ first, after, search, storeId: effectiveStoreId });
+      } catch (error) {
+        logger.error(`storesPaginated error: ${error.message}`);
         throw error;
       }
     },
@@ -618,6 +729,86 @@ const resolvers = {
       }
     },
 
+    // ── Permission queries ────────────────────────────────────────────────────
+
+    myPermissions: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.STAFF);
+        const p = await getStaffPermissions(user._id, storeId);
+        return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || user._id.toString(), storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
+      } catch (error) { logger.error(`myPermissions error: ${error.message}`); throw error; }
+    },
+
+    myPermissionRequests: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.STAFF);
+        const reqs = await getMyRequests(user._id, storeId);
+        return reqs.map(_formatRequest);
+      } catch (error) { logger.error(`myPermissionRequests error: ${error.message}`); throw error; }
+    },
+
+    pendingPermissionRequests: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const reqs = await getPendingRequests(storeId);
+        return reqs.map(_formatRequest);
+      } catch (error) { logger.error(`pendingPermissionRequests error: ${error.message}`); throw error; }
+    },
+
+    allPermissionRequests: async (_, { storeId, status }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const reqs = await getAllRequests(storeId, { status });
+        return reqs.map(_formatRequest);
+      } catch (error) { logger.error(`allPermissionRequests error: ${error.message}`); throw error; }
+    },
+
+    staffPermissions: async (_, { staffId, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const p = await getStaffPermissions(staffId, storeId);
+        return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || staffId, storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
+      } catch (error) { logger.error(`staffPermissions error: ${error.message}`); throw error; }
+    },
+
+    discountLogs: async (_, { storeId, limit, offset }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const logs = await getDiscountLogs(storeId, { limit, offset });
+        return logs.map(l => ({ ...l, id: l._id.toString(), orderId: l.orderId?.toString(), staffId: l.staffId?.toString(), appliedAt: l.appliedAt?.toISOString() }));
+      } catch (error) { logger.error(`discountLogs error: ${error.message}`); throw error; }
+    },
+
+    productChangeLogs: async (_, { storeId, limit, offset }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.ADMIN);
+        const logs = await getProductChangeLogs(storeId, { limit, offset });
+        return logs.map(l => ({
+          ...l,
+          id:         l._id.toString(),
+          productId:  l.productId?.toString() || null,
+          storeId:    l.storeId?.toString(),
+          oldValues:  l.oldValues  ? JSON.stringify(l.oldValues)  : null,
+          newValues:  l.newValues  ? JSON.stringify(l.newValues)  : null,
+          createdAt:  l.createdAt?.toISOString(),
+        }));
+      } catch (error) { logger.error(`productChangeLogs error: ${error.message}`); throw error; }
+    },
+
     // ── Customer only ─────────────────────────────────────────────────────────
 
     createRazorpayOrder: async (_, { amount }, context) => {
@@ -635,7 +826,7 @@ const resolvers = {
     createOrder: async (_, args, context) => {
       requireAuth(context);
       try {
-        const { razorpayOrderId, razorpayPaymentId, razorpaySignature, ...orderArgs } = args;
+        const { razorpayOrderId, razorpayPaymentId, razorpaySignature, discountCode, ...orderArgs } = args;
 
         const isValid = verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
         if (!isValid) {
@@ -647,6 +838,8 @@ const resolvers = {
         const user = await getOrCreateUser(context.user);
         requireRole(user, Roles.CUSTOMER);
 
+        await assertLimitNotReached(args.storeId, PLAN_LIMITS.MAX_ORDERS_PER_MONTH);
+
         const order = await createOrder({
           userId: user._id,
           razorpayOrderId,
@@ -655,6 +848,16 @@ const resolvers = {
           ...orderArgs,
         });
         logger.info(`Order created: ${order._id}`);
+
+        // If a discount code was used, consume it and write the audit log (non-blocking)
+        if (discountCode) {
+          consumeDiscountCode({
+            code:        discountCode,
+            storeId:     order.storeId,
+            orderId:     order._id,
+            grandTotal:  order.grandTotal,
+          }).catch(e => logger.error(`consumeDiscountCode failed for order ${order._id}: ${e.message}`));
+        }
 
         sendOrderConfirmation(user.fcmToken, {
           grandTotal: order.grandTotal,
@@ -667,6 +870,8 @@ const resolvers = {
           itemCount: order.items?.length ?? 1,
           grandTotal: order.grandTotal,
         }).catch(() => {});
+
+        refreshUsageCounters(order.storeId).catch(() => {});
 
         return order;
       } catch (error) {
@@ -749,6 +954,11 @@ const resolvers = {
       try {
         const user = await getOrCreateUser(context.user);
         requireRole(user, Roles.ADMIN);
+        // First store is always allowed (no subscription exists yet).
+        // For subsequent stores, check MAX_STORES against the existing subscription.
+        if (user.storeId) {
+          await assertLimitNotReached(user.storeId, PLAN_LIMITS.MAX_STORES);
+        }
         return await createStore({ name, address, lat, lon, storeCode }, context.user.uid);
       } catch (error) {
         logger.error(`createStore error: ${error.message}`);
@@ -784,8 +994,19 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, Roles.ADMIN);
-        return await createProduct({ storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel });
+        const isAdmin = hasRole(user, Roles.ADMIN);
+        if (!isAdmin) {
+          // Staff need explicit canAddProduct permission
+          requireRole(user, Roles.STAFF);
+          const allowed = await checkPermission(user._id, user.storeId, 'canAddProduct');
+          if (!allowed) {
+            throw new GraphQLError('You do not have permission to add products. Request access from admin.', { extensions: { code: 'FORBIDDEN' } });
+          }
+          // Price, stock, mrp are silently overwritten to 0 for staff (admin sets them later).
+        }
+        const product = await createProduct({ storeId: isAdmin ? storeId : user.storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp: isAdmin ? mrp : 0, price: isAdmin ? price : 0, stock: isAdmin ? stock : 0, reorderLevel });
+        logProductCreate({ product, changedBy: user._id, changedByName: user.name || 'Unknown', changedByRole: user.role }).catch(() => {});
+        return product;
       } catch (error) {
         logger.error(`createProduct error: ${error.message}`);
         throw error;
@@ -796,8 +1017,24 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, Roles.ADMIN);
-        return await updateProduct(id, { sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel, isAvailable });
+        const isAdmin = hasRole(user, Roles.ADMIN);
+        if (!isAdmin) {
+          requireRole(user, Roles.STAFF);
+          const allowed = await checkPermission(user._id, user.storeId, 'canEditProductInfo');
+          if (!allowed) {
+            throw new GraphQLError('You do not have permission to edit products. Request access from admin.', { extensions: { code: 'FORBIDDEN' } });
+          }
+          // Price, stock, mrp are excluded from staff updates via the updates object below.
+        }
+        const oldProduct = await Product.findById(id).lean();
+        const updates = isAdmin
+          ? { sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel, isAvailable }
+          : { sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, isAvailable };
+        const product = await updateProduct(id, updates);
+        if (oldProduct) {
+          logProductUpdate({ productId: id, storeId: oldProduct.storeId, barcode: oldProduct.barcode, oldProduct, updates, changedBy: user._id, changedByName: user.name || 'Unknown', changedByRole: user.role }).catch(() => {});
+        }
+        return product;
       } catch (error) {
         logger.error(`updateProduct error: ${error.message}`);
         throw error;
@@ -808,8 +1045,20 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, Roles.ADMIN);
-        return await deleteProduct(id);
+        const isAdmin = hasRole(user, Roles.ADMIN);
+        if (!isAdmin) {
+          requireRole(user, Roles.STAFF);
+          const allowed = await checkPermission(user._id, user.storeId, 'canDeleteProduct');
+          if (!allowed) {
+            throw new GraphQLError('You do not have permission to delete products. Request access from admin.', { extensions: { code: 'FORBIDDEN' } });
+          }
+        }
+        const oldProduct = await Product.findById(id).lean();
+        const result = await deleteProduct(id);
+        if (oldProduct) {
+          logProductDelete({ product: oldProduct, changedBy: user._id, changedByName: user.name || 'Unknown', changedByRole: user.role }).catch(() => {});
+        }
+        return result;
       } catch (error) {
         logger.error(`deleteProduct error: ${error.message}`);
         throw error;
@@ -820,12 +1069,19 @@ const resolvers = {
       requireAuth(context);
       try {
         const user = await getOrCreateUser(context.user);
-        requireRole(user, Roles.ADMIN);
-        return await bulkUpsertProducts(storeId, products, {
+        const isAdmin = hasRole(user, Roles.ADMIN);
+        if (!isAdmin) {
+          requireRole(user, Roles.STAFF);
+          const allowed = await checkPermission(user._id, user.storeId, 'canBulkUploadProducts');
+          if (!allowed) {
+            throw new GraphQLError('You do not have bulk upload permission. Request access from admin.', { extensions: { code: 'FORBIDDEN' } });
+          }
+        }
+        return await bulkUpsertProducts(isAdmin ? storeId : user.storeId, products, {
           fileName,
           totalRows,
           totalColumns,
-          uploadedBy: user._id,
+          uploadedBy:     user._id,
           uploadedByName: user.name ?? context.user.email ?? 'Unknown',
         });
       } catch (error) {
@@ -833,6 +1089,93 @@ const resolvers = {
         throw error;
       }
     },
+
+    // ── Permission mutations ──────────────────────────────────────────────────
+
+    requestPermission: async (_, { storeId, requestType, reason, requestedMaxDiscountPercent, requestedProductPerms }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.STAFF);
+        const req = await requestPermission({ staffId: user._id, storeId, requestType, reason, requestedMaxDiscountPercent, requestedProductPerms });
+        // Notify store admin (non-blocking)
+        sendPermissionRequestNotification(storeId, { staffName: user.name || 'Staff', requestType }).catch(() => {});
+        return req;
+      } catch (error) {
+        logger.error(`requestPermission error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    approvePermissionRequest: async (_, { requestId, reviewNote, grantedMaxDiscountPercent, grantedProductPerms }, context) => {
+      requireAuth(context);
+      try {
+        const admin = await getOrCreateUser(context.user);
+        requireRole(admin, Roles.ADMIN);
+        const req = await approveRequest(requestId, { adminId: admin._id, reviewNote, grantedMaxDiscountPercent, grantedProductPerms });
+        sendPermissionStatusNotification(req.staffId, { status: 'approved', requestType: req.requestType, reviewNote }).catch(() => {});
+        return req;
+      } catch (error) {
+        logger.error(`approvePermissionRequest error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    rejectPermissionRequest: async (_, { requestId, reviewNote }, context) => {
+      requireAuth(context);
+      try {
+        const admin = await getOrCreateUser(context.user);
+        requireRole(admin, Roles.ADMIN);
+        const req = await rejectRequest(requestId, { adminId: admin._id, reviewNote });
+        sendPermissionStatusNotification(req.staffId, { status: 'rejected', requestType: req.requestType, reviewNote }).catch(() => {});
+        return req;
+      } catch (error) {
+        logger.error(`rejectPermissionRequest error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    revokeStaffPermission: async (_, { staffId, storeId, permissionType }, context) => {
+      requireAuth(context);
+      try {
+        const admin = await getOrCreateUser(context.user);
+        requireRole(admin, Roles.ADMIN);
+        const perm = await revokePermission(staffId, storeId, { permissionType, adminId: admin._id });
+        sendPermissionStatusNotification(staffId, { status: 'revoked', requestType: permissionType, reviewNote: '' }).catch(() => {});
+        return perm;
+      } catch (error) {
+        logger.error(`revokeStaffPermission error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    // ── Discount mutations ────────────────────────────────────────────────────
+
+    generateDiscountCode: async (_, { storeId, discountPercent }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.STAFF);
+        return await generateDiscountCode({ staffId: user._id, staffName: user.name || 'Staff', storeId, discountPercent });
+      } catch (error) {
+        logger.error(`generateDiscountCode error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    validateDiscountCode: async (_, { code, storeId, subtotal }, context) => {
+      requireAuth(context);
+      try {
+        const user = await getOrCreateUser(context.user);
+        requireRole(user, Roles.CUSTOMER);
+        return await validateDiscountCode({ code, storeId, subtotal });
+      } catch (error) {
+        logger.error(`validateDiscountCode error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    // ── End permission/discount mutations ─────────────────────────────────────
 
     updateUserRole: async (_, { userId, role, storeId }, context) => {
       requireAuth(context);
@@ -864,9 +1207,12 @@ const resolvers = {
       try {
         const user = await getOrCreateUser(context.user);
         requireRole(user, Roles.ADMIN);
+        await assertLimitNotReached(storeId, PLAN_LIMITS.MAX_STAFF);
         const Store = require('./models/Store');
         const store = await Store.findById(storeId);
-        return await inviteStaff({ email, name, storeId, storeName: store?.name ?? 'Your Store' });
+        const result = await inviteStaff({ email, name, storeId, storeName: store?.name ?? 'Your Store' });
+        refreshUsageCounters(storeId).catch(() => {});
+        return result;
       } catch (error) {
         logger.error(`inviteStaff error: ${error.message}`);
         throw error;
@@ -984,7 +1330,7 @@ const resolvers = {
     id:   (sub) => sub._id.toString(),
     plan: (sub) => sub.planId,    // populated by getStoreSubscription()
     usageCounters: (sub) => sub.usageCounters ?? {
-      staffCount: 0, productCount: 0, ordersThisMonth: 0, lastCountedAt: null,
+      staffCount: 0, ordersThisMonth: 0, storeCount: 1, lastCountedAt: null,
     },
     currentPeriodStart: (sub) => sub.currentPeriodStart?.toISOString() ?? null,
     currentPeriodEnd:   (sub) => sub.currentPeriodEnd?.toISOString() ?? null,
@@ -1090,5 +1436,61 @@ resolvers.Mutation.setAdminSubscriptionOverride = async (_, { storeId, planName,
     throw err;
   }
 };
+
+resolvers.Mutation.createSubscriptionOrder = async (_, { storeId, planName, billingCycle }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    const plans = await getAvailablePlans();
+    const plan = plans.find(p => p.name === planName);
+    if (!plan) {
+      throw new GraphQLError(`Plan '${planName}' not found or not available`, { extensions: { code: 'NOT_FOUND' } });
+    }
+    const amount = billingCycle === 'annual' ? plan.price.annual : plan.price.monthly;
+    if (!amount || amount <= 0) {
+      throw new GraphQLError('Invalid plan amount', { extensions: { code: 'BAD_REQUEST' } });
+    }
+    return await createRazorpayOrder(amount);
+  } catch (err) {
+    logger.error(`createSubscriptionOrder error: ${err.message}`);
+    throw err;
+  }
+};
+
+resolvers.Mutation.confirmSubscriptionPayment = async (_, { storeId, planName, billingCycle, razorpayOrderId, razorpayPaymentId, razorpaySignature }, context) => {
+  requireAuth(context);
+  try {
+    const user = await getOrCreateUser(context.user);
+    requireRole(user, Roles.ADMIN);
+    const isValid = verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+    if (!isValid) {
+      throw new GraphQLError('Payment verification failed — signature mismatch', { extensions: { code: 'PAYMENT_VERIFICATION_FAILED' } });
+    }
+    return await activatePlan(storeId, {
+      planName,
+      billingCycle: billingCycle === 'annual' ? 'annual' : 'monthly',
+      paymentId:       razorpayPaymentId,
+      triggeredBy:     context.user.uid,
+      triggeredByRole: Roles.ADMIN,
+    });
+  } catch (err) {
+    logger.error(`confirmSubscriptionPayment error: ${err.message}`);
+    throw err;
+  }
+};
+
+// ── Helper: serialize PermissionRequest for GraphQL ──────────────────────────
+function _formatRequest(r) {
+  return {
+    ...r,
+    id:          r._id.toString(),
+    staffId:     r.staffId?.toString(),
+    storeId:     r.storeId?.toString(),
+    reviewedBy:  r.reviewedBy?.toString() || null,
+    reviewedAt:  r.reviewedAt?.toISOString()  || null,
+    createdAt:   r.createdAt?.toISOString()   || '',
+  };
+}
 
 module.exports = resolvers;

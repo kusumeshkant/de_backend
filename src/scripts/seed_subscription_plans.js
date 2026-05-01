@@ -2,13 +2,18 @@
  * seed_subscription_plans.js
  *
  * Seeds the 3 public plans + 2 internal plans into the DB.
- * Public:   Starter / Growth / Pro
+ * Public:   Starter / Growth / Enterprise
  * Internal: Trial (auto-assigned to new stores), Grandfathered (existing stores)
  *
  * Idempotent — uses upsert by name so it's safe to re-run.
  *
  * Run from repo root:
  *   node src/scripts/seed_subscription_plans.js
+ *
+ * ⚠ SYNC RULE — website (dq_website/lib/constants.ts → PRICING_PLANS) is the
+ * source of truth for pricing. When prices/features change on the website,
+ * update this file to match and re-run the seed. The admin app reads plans live
+ * from the API and auto-syncs whenever the DB is updated.
  */
 
 require('dotenv').config();
@@ -20,27 +25,27 @@ const SubscriptionPlan   = require('../models/SubscriptionPlan');
 const { PLAN_NAMES, UNLIMITED } = require('../constants/feature_keys');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PLAN DEFINITIONS
+// PLAN DEFINITIONS — mirrors dq_website/lib/constants.ts → PRICING_PLANS
 //
-// Public plans (isVisible: true)  — shown on pricing page, purchasable
-//   Starter  ₹999/mo   — analytics + bulk upload, up to 5 staff, 500 orders/mo
-//   Growth   ₹2499/mo  — + coupons, advanced reports, staff analytics, export, 15 staff, 5k orders/mo
-//   Pro      ₹4999/mo  — full platform, unlimited staff + orders
+// Public plans (isVisible: true)  — shown in pricing, purchasable via Razorpay
+//   Starter     ₹2,999/mo  — analytics + bulk upload, 3 staff, 500 orders, 1 store
+//   Growth      ₹5,999/mo  — + coupons, advanced reports, unlimited orders, 3 stores
+//   Enterprise  custom     — contact sales, unlimited everything
 //
-// Internal plans (isVisible: false) — auto-assigned, never shown in pricing
-//   Trial        — every new store, 14 days, same features as Growth
-//   Grandfathered — existing stores, 90 days, same features as Pro
+// Internal plans (isVisible: false) — auto-assigned, never shown in pricing UI
+//   Trial        — every new store, 30 days, same features as Growth
+//   Grandfathered — existing stores, 90 days, same features as Enterprise
 //
-// maxProducts = UNLIMITED on all plans — product uploads are never blocked.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PLANS = [
   // ── STARTER ────────────────────────────────────────────────────────────────
+  // Website: ₹2,999/mo · ₹29,990/year (save ₹5,998 = 2 months free)
   {
     name:        PLAN_NAMES.STARTER,
     displayName: 'Starter',
-    description: 'Everything a growing store needs to go digital.',
-    price:       { monthly: 999, annual: 9588 },   // ₹999/mo · ₹799/mo billed annually
+    description: 'Perfect for a single store getting started.',
+    price:       { monthly: 2999, annual: 29990 }, // ₹2,999/mo · ₹2,499/mo billed annually
     features: {
       coupons:                   false,
       analytics:                 true,
@@ -53,8 +58,7 @@ const PLANS = [
       exportData:                false,
     },
     limits: {
-      maxStaff:           5,
-      maxProducts:        UNLIMITED,
+      maxStaff:           3,
       maxOrdersPerMonth:  500,
       maxStores:          1,
     },
@@ -66,11 +70,12 @@ const PLANS = [
   },
 
   // ── GROWTH ─────────────────────────────────────────────────────────────────
+  // Website: ₹5,999/mo · ₹59,990/year (save ₹11,998 = 2 months free)
   {
     name:        PLAN_NAMES.GROWTH,
     displayName: 'Growth',
-    description: 'Advanced analytics and coupon engine for ambitious stores.',
-    price:       { monthly: 2499, annual: 23988 }, // ₹2499/mo · ₹1999/mo billed annually
+    description: 'For stores ready to scale with advanced tools.',
+    price:       { monthly: 5999, annual: 59990 }, // ₹5,999/mo · ₹4,999/mo billed annually
     features: {
       coupons:                   true,
       analytics:                 true,
@@ -83,10 +88,9 @@ const PLANS = [
       exportData:                true,
     },
     limits: {
-      maxStaff:           15,
-      maxProducts:        UNLIMITED,
-      maxOrdersPerMonth:  5000,
-      maxStores:          1,
+      maxStaff:           UNLIMITED,
+      maxOrdersPerMonth:  UNLIMITED,
+      maxStores:          3,
     },
     trialDays:     0,
     graceDays:     7,
@@ -95,12 +99,13 @@ const PLANS = [
     displayOrder:  2,
   },
 
-  // ── PRO ────────────────────────────────────────────────────────────────────
+  // ── ENTERPRISE ─────────────────────────────────────────────────────────────
+  // Website: Custom pricing — "Talk to Us" (no Razorpay, contact sales)
   {
-    name:        PLAN_NAMES.PRO,
-    displayName: 'Pro',
-    description: 'Full platform — unlimited orders, LTV analytics, branding, and priority support.',
-    price:       { monthly: 4999, annual: 47988 }, // ₹4999/mo · ₹3999/mo billed annually
+    name:        PLAN_NAMES.ENTERPRISE,
+    displayName: 'Enterprise',
+    description: 'Multi-outlet chains and large-format retail.',
+    price:       { monthly: 0, annual: 0 },        // custom — billed offline
     features: {
       coupons:                   true,
       analytics:                 true,
@@ -114,23 +119,23 @@ const PLANS = [
     },
     limits: {
       maxStaff:           UNLIMITED,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  UNLIMITED,
-      maxStores:          3,
+      maxStores:          UNLIMITED,
     },
+    isCustomPricing: true,   // admin app shows "Contact Us" instead of Razorpay
     trialDays:     0,
-    graceDays:     14,
+    graceDays:     30,
     isRecommended: false,
     isVisible:     true,
     displayOrder:  3,
   },
 
   // ── TRIAL (internal) ───────────────────────────────────────────────────────
-  // Auto-assigned to every new store for 14 days. Same features as Growth.
+  // Auto-assigned to every new store for 30 days. Same features as Growth.
   {
     name:        PLAN_NAMES.TRIAL,
     displayName: 'Trial',
-    description: '14-day free trial — full Growth features, no payment required.',
+    description: '30-day free trial — full Growth features, no payment required.',
     price:       { monthly: 0, annual: 0 },
     features: {
       coupons:                   true,
@@ -145,11 +150,10 @@ const PLANS = [
     },
     limits: {
       maxStaff:           15,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  5000,
       maxStores:          1,
     },
-    trialDays:     14,
+    trialDays:     30,
     graceDays:     7,
     isRecommended: false,
     isVisible:     false,   // not shown in pricing — assigned automatically
@@ -177,9 +181,8 @@ const PLANS = [
     },
     limits: {
       maxStaff:           UNLIMITED,
-      maxProducts:        UNLIMITED,
       maxOrdersPerMonth:  UNLIMITED,
-      maxStores:          1,
+      maxStores:          UNLIMITED,
     },
     trialDays:     0,
     graceDays:     30,
