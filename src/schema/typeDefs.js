@@ -278,6 +278,22 @@ const typeDefs = `#graphql
 
     # Subscription: remaining usage for a specific limit key (requires admin auth)
     planUsage(storeId: ID!, limitKey: String!): PlanUsage!
+
+    # ── Permissions ───────────────────────────────────────────────────────────
+    # Staff: current permissions for this staff member in this store
+    myPermissions(storeId: ID!): StaffPermission!
+    # Staff: history of all permission requests submitted by this staff
+    myPermissionRequests(storeId: ID!): [PermissionRequest!]!
+    # Admin: all pending requests waiting for review
+    pendingPermissionRequests(storeId: ID!): [PermissionRequest!]!
+    # Admin: all requests (optionally filtered by status)
+    allPermissionRequests(storeId: ID!, status: String): [PermissionRequest!]!
+    # Admin: view a specific staff member's granted permissions
+    staffPermissions(staffId: ID!, storeId: ID!): StaffPermission!
+
+    # ── Audit Logs ────────────────────────────────────────────────────────────
+    discountLogs(storeId: ID!, limit: Int, offset: Int): [DiscountLog!]!
+    productChangeLogs(storeId: ID!, limit: Int, offset: Int): [ProductChangeLog!]!
   }
 
   type RazorpayOrder {
@@ -364,6 +380,7 @@ const typeDefs = `#graphql
       razorpayOrderId: String!
       razorpayPaymentId: String!
       razorpaySignature: String!
+      discountCode: String        # optional — if provided, marks code used & writes DiscountLog
     ): Order!
 
     # Update order status — called by dq_staff (requires Firebase auth)
@@ -635,6 +652,7 @@ const typeDefs = `#graphql
     trialDays: Int!
     graceDays: Int!
     isRecommended: Boolean!
+    isCustomPricing: Boolean!
     displayOrder: Int!
   }
 
@@ -682,6 +700,132 @@ const typeDefs = `#graphql
     prioritySupport: Boolean!
     customBranding: Boolean!
     exportData: Boolean!
+  }
+
+  # ── Permission System ─────────────────────────────────────────────────────────
+
+  type StaffPermission {
+    id: ID
+    staffId: ID!
+    storeId: ID!
+    canDiscount: Boolean!
+    maxDiscountPercent: Float!
+    canEditProductInfo: Boolean!
+    canAddProduct: Boolean!
+    canDeleteProduct: Boolean!
+    canBulkUploadProducts: Boolean!
+    grantedAt: String
+    notes: String
+  }
+
+  type PermissionRequest {
+    id: ID!
+    staffId: ID!
+    staffName: String!
+    staffEmail: String
+    storeId: ID!
+    requestType: String!
+    reason: String!
+    requestedMaxDiscountPercent: Float
+    requestedProductPerms: [String!]
+    status: String!
+    reviewedBy: ID
+    reviewedAt: String
+    reviewNote: String
+    grantedMaxDiscountPercent: Float
+    grantedProductPerms: [String!]
+    createdAt: String!
+  }
+
+  type DiscountCodeResult {
+    id: ID!
+    code: String!
+    discountPercent: Float!
+    expiresAt: String!
+    generatedByName: String!
+  }
+
+  type DiscountValidation {
+    valid: Boolean!
+    discountPercent: Float!
+    discountAmount: Float!
+    finalAmount: Float!
+    generatedByName: String!
+    expiresAt: String!
+  }
+
+  type DiscountLog {
+    id: ID!
+    orderId: ID!
+    staffId: ID!
+    staffName: String!
+    discountCode: String!
+    discountPercent: Float!
+    originalAmount: Float!
+    discountAmount: Float!
+    finalAmount: Float!
+    appliedAt: String!
+  }
+
+  type ProductChangeLog {
+    id: ID!
+    productId: ID
+    storeId: ID!
+    barcode: String
+    changedByName: String!
+    changedByRole: String!
+    changeType: String!
+    changedFields: [String!]!
+    oldValues: String
+    newValues: String
+    createdAt: String!
+  }
+
+  # ── Permission Mutations ──────────────────────────────────────────────────────
+
+  extend type Mutation {
+    # Staff: submit a new permission request
+    requestPermission(
+      storeId: ID!
+      requestType: String!
+      reason: String!
+      requestedMaxDiscountPercent: Float
+      requestedProductPerms: [String!]
+    ): PermissionRequest!
+
+    # Admin: approve a pending request (can grant less than requested)
+    approvePermissionRequest(
+      requestId: ID!
+      reviewNote: String
+      grantedMaxDiscountPercent: Float
+      grantedProductPerms: [String!]
+    ): PermissionRequest!
+
+    # Admin: reject a pending request
+    rejectPermissionRequest(
+      requestId: ID!
+      reviewNote: String
+    ): PermissionRequest!
+
+    # Admin: revoke a granted permission (permissionType: discount|product_edit|bulk_upload)
+    revokeStaffPermission(
+      staffId: ID!
+      storeId: ID!
+      permissionType: String!
+    ): StaffPermission
+
+    # Approved staff: generate a one-time discount code for a customer
+    generateDiscountCode(
+      storeId: ID!
+      discountPercent: Float!
+    ): DiscountCodeResult!
+
+    # Customer: validate a discount code before initiating Razorpay payment
+    validateDiscountCode(
+      code: String!
+      storeId: ID!
+      subtotal: Float!
+    ): DiscountValidation!
   }
 `;
 
