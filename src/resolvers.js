@@ -1,4 +1,4 @@
-const { GraphQLError } = require('graphql');
+﻿const { GraphQLError } = require('graphql');
 const { Roles, AppId, RoleHint, RoleGroups } = require('./constants/roles');
 const { PLAN_LIMITS } = require('./constants/feature_keys');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, getStaffPaginated, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
@@ -23,16 +23,16 @@ const { getFeatureAccessMap } = require('./services/feature_access_service');
 const { getRemainingUsage, assertLimitNotReached, refreshUsageCounters } = require('./services/plan_limit_service');
 const logger = require('./utils/logger_cf');
 
-// ── Auth helpers ──────────────────────────────────────────────────────────────
+// â”€â”€ Auth helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Request context shape (set by index.js):
-//   context.user   — Firebase identity { uid, email, phone } | null
-//   context.dbUser — MongoDB User doc  { _id, roles, ... }  | null
+//   context.user   â€” Firebase identity { uid, email, phone } | null
+//   context.dbUser â€” MongoDB User doc  { _id, roles, ... }  | null
 //
 // Call order in every protected resolver:
-//   1. requireAuth(context)   — verifies Firebase token was valid
-//   2. requireDbUser(context) — verifies user exists in MongoDB
-//   3. requireRole(...)       — verifies the user holds a required role
+//   1. requireAuth(context)   â€” verifies Firebase token was valid
+//   2. requireDbUser(context) â€” verifies user exists in MongoDB
+//   3. requireRole(...)       â€” verifies the user holds a required role
 
 /** Throws UNAUTHENTICATED if no valid Firebase token was present in the request. */
 function requireAuth(context) {
@@ -89,15 +89,15 @@ function requireRole(user, ...roles) {
   }
 }
 
-// ── Resolvers ─────────────────────────────────────────────────────────────────
+// â”€â”€ Resolvers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const resolvers = {
   Query: {
 
-    // ── Public (no auth required) ─────────────────────────────────────────────
-    // Only store discovery queries are public — they contain no sensitive data.
+    // â”€â”€ Public (no auth required) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Only store discovery queries are public â€” they contain no sensitive data.
 
-    // ── Authenticated — any logged-in role ────────────────────────────────────
+    // â”€â”€ Authenticated â€” any logged-in role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     // productByBarcode requires auth to prevent unauthenticated inventory scraping.
     // Any valid Firebase session is accepted (customer, staff, or admin).
@@ -129,13 +129,13 @@ const resolvers = {
       }
     },
 
-    // ── Any authenticated role ────────────────────────────────────────────────
+    // â”€â”€ Any authenticated role â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //
     // Pattern for all protected resolvers (replaces the old getOrCreateUser() call):
     //
-    //   requireAuth(context);          — Firebase token was valid
-    //   const dbUser = requireDbUser(context);  — MongoDB doc pre-loaded in context
-    //   requireRole(dbUser, Roles.X);  — role check if needed
+    //   requireAuth(context);          â€” Firebase token was valid
+    //   const dbUser = requireDbUser(context);  â€” MongoDB doc pre-loaded in context
+    //   requireRole(dbUser, Roles.X);  â€” role check if needed
     //
     // context.dbUser is loaded once per request in index.js. No extra DB query needed.
 
@@ -144,7 +144,7 @@ const resolvers = {
       const dbUser = requireDbUser(context);
       try {
         // getProfile fetches the full Mongoose document (with virtuals).
-        // context.dbUser is a lean() plain object — suitable for role checks,
+        // context.dbUser is a lean() plain object â€” suitable for role checks,
         // but use the full document when you need Mongoose methods or virtuals.
         return await getProfile(dbUser._id);
       } catch (error) {
@@ -154,7 +154,7 @@ const resolvers = {
     },
 
     /**
-     * App-specific login gate — must be called once on login and cold start.
+     * App-specific login gate â€” must be called once on login and cold start.
      *
      * appId values: "CUSTOMER" | "STAFF" | "ADMIN"
      *
@@ -179,33 +179,31 @@ const resolvers = {
           user = await User.findOne({ firebase_uid: context.user.uid });
 
           if (user) {
-            // Existing user — allow if they hold the customer role.
-            // A dual-role account (customer + staff, or customer + admin) IS
-            // allowed — the customer role is what matters here, not whether
-            // they also have another role.
+            // Strict separation: one account, one app. Admin and staff accounts
+            // cannot be used to shop â€” they must register a separate customer account.
+            if (hasRole(user, Roles.ADMIN)) {
+              throw new GraphQLError(
+                'This account is registered as a store admin. Admin and customer accounts must be separate â€” please use a different account to shop on DQ.',
+                { extensions: { code: 'FORBIDDEN', hint: RoleHint.ADMIN_NO_CUSTOMER } }
+              );
+            }
+            if (hasRole(user, Roles.STAFF)) {
+              throw new GraphQLError(
+                'This account is registered as a store staff member. Staff and customer accounts must be separate â€” please use a different account to shop on DQ.',
+                { extensions: { code: 'FORBIDDEN', hint: RoleHint.STAFF_NO_CUSTOMER } }
+              );
+            }
             if (!hasRole(user, Roles.CUSTOMER)) {
-              if (hasRole(user, Roles.ADMIN)) {
-                throw new GraphQLError(
-                  'This account is registered as a store admin. To shop on DQ, open the Sign Up screen and tap "Continue with Google" — it will add a customer profile to your account.',
-                  { extensions: { code: 'FORBIDDEN', hint: RoleHint.ADMIN_NO_CUSTOMER } }
-                );
-              }
-              if (hasRole(user, Roles.STAFF)) {
-                throw new GraphQLError(
-                  'This account is registered as a store staff member. To shop on DQ, open the Sign Up screen and tap "Continue with Google" — it will add a customer profile to your account.',
-                  { extensions: { code: 'FORBIDDEN', hint: RoleHint.STAFF_NO_CUSTOMER } }
-                );
-              }
-              // Has unrecognised roles, no customer — block generically
               throw new GraphQLError(
                 'This account does not have customer access. Please sign up on the DQ App to shop.',
                 { extensions: { code: 'FORBIDDEN', hint: RoleHint.NO_CUSTOMER } }
               );
             }
-            // user has customer role — fall through to return profile
+            // user has customer role and no conflicting roles â€” allowed
           } else {
-            // First-ever login to DQ App — safe to auto-create as customer.
-            user = await getOrCreateUser(context.user);
+            // First-ever login to DQ App â€” safe to auto-create as customer.
+            const newCustomer = await getOrCreateUser(context.user);
+            user = newCustomer;
           }
 
         } else if (appId === AppId.STAFF) {
@@ -213,11 +211,17 @@ const resolvers = {
           user = await User.findOne({ firebase_uid: context.user.uid });
           if (!user) {
             throw new GraphQLError(
-              'No staff account found. Please register and accept your store invite.',
+              'No staff account found for this ID. Please register and accept your store invite.',
               { extensions: { code: 'NOT_FOUND' } }
             );
           }
           if (!hasRole(user, Roles.STAFF, Roles.ADMIN)) {
+            if (hasRole(user, Roles.CUSTOMER)) {
+              throw new GraphQLError(
+                'This account is registered as a customer on DQ App. Customer and staff accounts must be separate â€” please use a different account for staff access.',
+                { extensions: { code: 'FORBIDDEN', hint: 'CUSTOMER_NO_STAFF' } }
+              );
+            }
             throw new GraphQLError(
               'Access denied. Contact your store admin to get staff access.',
               { extensions: { code: 'FORBIDDEN' } }
@@ -227,10 +231,28 @@ const resolvers = {
         } else if (appId === AppId.ADMIN) {
           // Admins must have registered through the dq_admin signup flow first.
           user = await User.findOne({ firebase_uid: context.user.uid });
-          if (!user || !hasRole(user, Roles.ADMIN)) {
+          if (!user) {
             throw new GraphQLError(
-              'This account is not registered as a store admin. Please sign up via the DQ Admin app.',
-              { extensions: { code: 'FORBIDDEN' } }
+              'No admin account found for this ID. Please sign up using the DQ Admin app.',
+              { extensions: { code: 'FORBIDDEN', hint: 'NO_ACCOUNT' } }
+            );
+          }
+          if (!hasRole(user, Roles.ADMIN)) {
+            if (hasRole(user, Roles.CUSTOMER)) {
+              throw new GraphQLError(
+                'This account is registered as a customer on DQ App. Customer and admin accounts must be separate â€” please use a different account to sign up as an admin.',
+                { extensions: { code: 'FORBIDDEN', hint: 'CUSTOMER_NO_ADMIN' } }
+              );
+            }
+            if (hasRole(user, Roles.STAFF)) {
+              throw new GraphQLError(
+                'This account is registered as a store staff member. Staff and admin accounts must be separate â€” please use a different account to sign up as an admin.',
+                { extensions: { code: 'FORBIDDEN', hint: 'STAFF_NO_ADMIN' } }
+              );
+            }
+            throw new GraphQLError(
+              'This account does not have admin access. Please sign up via the DQ Admin app.',
+              { extensions: { code: 'FORBIDDEN', hint: 'NO_ADMIN' } }
             );
           }
 
@@ -249,7 +271,7 @@ const resolvers = {
       }
     },
 
-    // ── Staff + Admin ─────────────────────────────────────────────────────────
+    // â”€â”€ Staff + Admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     stores: async (_, __, context) => {
       requireAuth(context);
@@ -270,7 +292,7 @@ const resolvers = {
     storeOrders: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.STAFF, Roles.ADMIN);
         // Ownership check: staff/admin may only query orders for their own store.
         // Without this, a compromised staff account at Store A could exfiltrate
@@ -290,7 +312,7 @@ const resolvers = {
     orderById: async (_, { orderId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.STAFF, Roles.ADMIN);
         return await getOrderByIdForStaff(orderId);
       } catch (error) {
@@ -302,7 +324,7 @@ const resolvers = {
     storeProducts: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.STAFF, Roles.ADMIN);
         return await getStoreProducts(storeId);
       } catch (error) {
@@ -314,7 +336,7 @@ const resolvers = {
     storeProductsPaginated: async (_, { storeId, first, after, search, sortBy, sortDir, filters }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await getProductsPaginated(storeId, { first, after, search, sortBy, sortDir, filters });
       } catch (error) {
@@ -333,12 +355,12 @@ const resolvers = {
       }
     },
 
-    // ── Admin only ────────────────────────────────────────────────────────────
+    // â”€â”€ Admin only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     allOrders: async (_, { storeId, status }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
         return await getAllOrders({ storeId: effectiveStoreId, status });
@@ -351,7 +373,7 @@ const resolvers = {
     allOrdersPaginated: async (_, { first, after, search, storeId, status }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
         return await getOrdersPaginated({ storeId: effectiveStoreId, first, after, search, filters: status ? { status } : {} });
@@ -364,7 +386,7 @@ const resolvers = {
     allStaffPaginated: async (_, { first, after, search, storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
         return await getStaffPaginated({ first, after, search, storeId: effectiveStoreId });
@@ -377,7 +399,7 @@ const resolvers = {
     storesPaginated: async (_, { first, after, search, storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : storeId;
         return await getStoresPaginated({ first, after, search, storeId: effectiveStoreId });
@@ -390,7 +412,7 @@ const resolvers = {
     dashboardStats: async (_, __, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         if (user.storeId) {
           const stats = await getStoreStats(user.storeId.toString());
@@ -433,7 +455,7 @@ const resolvers = {
     storeStats: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await getStoreStats(storeId);
       } catch (error) {
@@ -445,7 +467,7 @@ const resolvers = {
     allStaff: async (_, __, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : null;
         return await getAllStaff(effectiveStoreId);
@@ -458,7 +480,7 @@ const resolvers = {
     storeStaff: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await getStoreStaff(storeId);
       } catch (error) {
@@ -470,7 +492,7 @@ const resolvers = {
     pendingInvites: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await getPendingInvites(storeId);
       } catch (error) {
@@ -482,7 +504,7 @@ const resolvers = {
     userByEmail: async (_, { email }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await getUserByEmail(email);
       } catch (error) {
@@ -494,7 +516,7 @@ const resolvers = {
     validateCartStock: async (_, { storeId, items }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
         return await validateCartStock(storeId, items, user._id);
       } catch (error) {
@@ -506,7 +528,7 @@ const resolvers = {
     storeAnalytics: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getStoreAnalytics(effectiveStoreId);
@@ -519,7 +541,7 @@ const resolvers = {
     basketAbandonment: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getBasketAbandonmentStats(effectiveStoreId);
@@ -532,7 +554,7 @@ const resolvers = {
     customerLTV: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getCustomerLTV(effectiveStoreId);
@@ -545,7 +567,7 @@ const resolvers = {
     monthlyRevenue: async (_, { storeId, year }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getMonthlyRevenue(effectiveStoreId, year ?? null);
@@ -558,7 +580,7 @@ const resolvers = {
     staffPerformance: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getStaffPerformance(effectiveStoreId);
@@ -571,7 +593,7 @@ const resolvers = {
     customerRetention: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = user.storeId ? user.storeId.toString() : (storeId ?? null);
         return await getCustomerRetention(effectiveStoreId);
@@ -584,7 +606,7 @@ const resolvers = {
     uploadLogs: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const logs = await getUploadLogs(storeId);
         return logs.map((l) => ({
@@ -600,12 +622,12 @@ const resolvers = {
       }
     },
 
-    // ── Customer only ─────────────────────────────────────────────────────────
+    // â”€â”€ Customer only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     myOrders: async (_, __, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
         return await getMyOrders(user._id);
       } catch (error) {
@@ -617,7 +639,7 @@ const resolvers = {
     order: async (_, { id }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
         return await getOrderById(id, user._id);
       } catch (error) {
@@ -627,35 +649,47 @@ const resolvers = {
     },
   },
 
-  // ── Mutations ─────────────────────────────────────────────────────────────
+  // â”€â”€ Mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Mutation: {
 
-    // ── Any authenticated user ────────────────────────────────────────────────
+    // â”€â”€ Any authenticated user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /**
      * Called by the DQ App (customer app) signup flow when a staff or admin
      * Google account wants to also shop as a customer.
      *
      * Adds 'customer' to the roles array without touching existing roles.
-     * Customer is the lowest-privilege role — no guard beyond authentication
+     * Customer is the lowest-privilege role â€” no guard beyond authentication
      * is needed. Idempotent: safe to call even if already a customer.
      */
     registerAsCustomer: async (_, __, context) => {
       requireAuth(context);
       try {
+        const User = require('./models/User');
         const user = await User.findOne({ firebase_uid: context.user.uid });
         if (!user) {
-          // First-ever login — create as customer
-          return await getOrCreateUser(context.user);
+          // First-ever login â€” create as customer
+          const newCustomer = await getOrCreateUser(context.user);
+          return await getProfile(newCustomer._id);
+        }
+        if (hasRole(user, Roles.ADMIN)) {
+          throw new GraphQLError(
+            'This account is registered as a store admin. Admin and customer accounts must be separate â€” please use a different account to shop on DQ.',
+            { extensions: { code: 'FORBIDDEN', hint: 'ADMIN_NO_CUSTOMER' } }
+          );
+        }
+        if (hasRole(user, Roles.STAFF)) {
+          throw new GraphQLError(
+            'This account is registered as a store staff member. Staff and customer accounts must be separate â€” please use a different account to shop on DQ.',
+            { extensions: { code: 'FORBIDDEN', hint: 'STAFF_NO_CUSTOMER' } }
+          );
         }
         if (hasRole(user, Roles.CUSTOMER)) {
-          // Already a customer — idempotent, return as-is
           return await getProfile(user._id);
         }
-        // Add customer role without touching other roles
         await ensureCustomerRole(user._id);
-        logger.info(`registerAsCustomer: uid=${context.user.uid} previous_roles=[${user.roles}] — customer role added`);
+        logger.info(`registerAsCustomer: uid=${context.user.uid} â€” customer role added`);
         return await getProfile(user._id);
       } catch (error) {
         logger.error(`registerAsCustomer error: ${error.message}`);
@@ -673,21 +707,30 @@ const resolvers = {
     registerAdmin: async (_, __, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
-        if (hasRole(user, Roles.ADMIN)) return user; // idempotent
+        const User = require('./models/User');
+        const existing = await User.findOne({ firebase_uid: context.user.uid });
 
-        // Prevent existing customers from self-promoting.
-        // A real customer will have placed orders; a new admin account won't.
-        const Order = require('./models/Order');
-        const orderCount = await Order.countDocuments({ userId: user._id });
-        if (orderCount > 0) {
-          throw new GraphQLError(
-            'This account already exists as a customer account and cannot be registered as an admin.',
-            { extensions: { code: 'FORBIDDEN' } }
-          );
+        if (existing) {
+          if (hasRole(existing, Roles.ADMIN)) return existing; // idempotent
+          if (hasRole(existing, Roles.CUSTOMER)) {
+            throw new GraphQLError(
+              'This account is already registered as a customer on DQ App. Customer and admin accounts must be separate â€” please use a different account to sign up as an admin.',
+              { extensions: { code: 'FORBIDDEN', hint: 'CUSTOMER_NO_ADMIN' } }
+            );
+          }
+          if (hasRole(existing, Roles.STAFF)) {
+            throw new GraphQLError(
+              'This account is already registered as a store staff member. Staff and admin accounts must be separate â€” please use a different account to sign up as an admin.',
+              { extensions: { code: 'FORBIDDEN', hint: 'STAFF_NO_ADMIN' } }
+            );
+          }
+          // Account exists but has no conflicting role â€” upgrade directly
+          return await upgradeToAdmin(existing._id, existing.storeId);
         }
 
-        return await upgradeToAdmin(user._id, user.storeId);
+        // Brand new account â€” create and upgrade to admin
+        const newUser = await getOrCreateUser(context.user);
+        return await upgradeToAdmin(newUser._id, newUser.storeId);
       } catch (error) {
         logger.error(`registerAdmin error: ${error.message}`);
         throw error;
@@ -697,7 +740,7 @@ const resolvers = {
     updateProfile: async (_, { name, phone, email }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         return await updateProfile(user._id, { name, phone, email });
       } catch (error) {
         logger.error(`updateProfile error: ${error.message}`);
@@ -708,7 +751,7 @@ const resolvers = {
     updateFcmToken: async (_, { token }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         await updateFcmToken(user._id, token);
         return true;
       } catch (error) {
@@ -717,7 +760,7 @@ const resolvers = {
       }
     },
 
-    // acceptInvite is called during staff registration — user may only have
+    // acceptInvite is called during staff registration â€” user may only have
     // customer role at this point. After this call, they get staff role.
     acceptInvite: async (_, { token }, context) => {
       requireAuth(context);
@@ -729,12 +772,12 @@ const resolvers = {
       }
     },
 
-    // ── Permission queries ────────────────────────────────────────────────────
+    // â”€â”€ Permission queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     myPermissions: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.STAFF);
         const p = await getStaffPermissions(user._id, storeId);
         return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || user._id.toString(), storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
@@ -744,7 +787,7 @@ const resolvers = {
     myPermissionRequests: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.STAFF);
         const reqs = await getMyRequests(user._id, storeId);
         return reqs.map(_formatRequest);
@@ -754,7 +797,7 @@ const resolvers = {
     pendingPermissionRequests: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const reqs = await getPendingRequests(storeId);
         return reqs.map(_formatRequest);
@@ -764,7 +807,7 @@ const resolvers = {
     allPermissionRequests: async (_, { storeId, status }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const reqs = await getAllRequests(storeId, { status });
         return reqs.map(_formatRequest);
@@ -774,7 +817,7 @@ const resolvers = {
     staffPermissions: async (_, { staffId, storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const p = await getStaffPermissions(staffId, storeId);
         return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || staffId, storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
@@ -784,7 +827,7 @@ const resolvers = {
     discountLogs: async (_, { storeId, limit, offset }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const logs = await getDiscountLogs(storeId, { limit, offset });
         return logs.map(l => ({ ...l, id: l._id.toString(), orderId: l.orderId?.toString(), staffId: l.staffId?.toString(), appliedAt: l.appliedAt?.toISOString() }));
@@ -794,7 +837,7 @@ const resolvers = {
     productChangeLogs: async (_, { storeId, limit, offset }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const logs = await getProductChangeLogs(storeId, { limit, offset });
         return logs.map(l => ({
@@ -809,12 +852,12 @@ const resolvers = {
       } catch (error) { logger.error(`productChangeLogs error: ${error.message}`); throw error; }
     },
 
-    // ── Customer only ─────────────────────────────────────────────────────────
+    // â”€â”€ Customer only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     createRazorpayOrder: async (_, { amount }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
         return await createRazorpayOrder(amount);
       } catch (error) {
@@ -835,7 +878,7 @@ const resolvers = {
           });
         }
 
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
 
         await assertLimitNotReached(args.storeId, PLAN_LIMITS.MAX_ORDERS_PER_MONTH);
@@ -880,12 +923,12 @@ const resolvers = {
       }
     },
 
-    // ── Staff + Admin ─────────────────────────────────────────────────────────
+    // â”€â”€ Staff + Admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     updateOrderStatus: async (_, { orderId, status }, context) => {
       requireAuth(context);
       try {
-        const staffUser = await getOrCreateUser(context.user);
+        const staffUser = requireDbUser(context);
         requireRole(staffUser, Roles.STAFF, Roles.ADMIN);
         if (staffUser.storeId) {
           const Order = require('./models/Order');
@@ -920,7 +963,7 @@ const resolvers = {
     flagOrderIssue: async (_, { orderId, reason, note }, context) => {
       requireAuth(context);
       try {
-        const staffUser = await getOrCreateUser(context.user);
+        const staffUser = requireDbUser(context);
         requireRole(staffUser, Roles.STAFF, Roles.ADMIN);
         return await flagOrderIssue(
           orderId,
@@ -935,12 +978,12 @@ const resolvers = {
       }
     },
 
-    // ── Admin only ────────────────────────────────────────────────────────────
+    // â”€â”€ Admin only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     upgradeToAdmin: async (_, { storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await upgradeToAdmin(user._id, storeId);
       } catch (error) {
@@ -952,7 +995,7 @@ const resolvers = {
     createStore: async (_, { name, address, lat, lon, storeCode }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         // First store is always allowed (no subscription exists yet).
         // For subsequent stores, check MAX_STORES against the existing subscription.
@@ -969,7 +1012,7 @@ const resolvers = {
     updateStore: async (_, { id, name, address, lat, lon, storeCode, isActive }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await updateStore(id, { name, address, lat, lon, storeCode, isActive });
       } catch (error) {
@@ -981,7 +1024,7 @@ const resolvers = {
     deleteStore: async (_, { id }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await deleteStore(id);
       } catch (error) {
@@ -993,7 +1036,7 @@ const resolvers = {
     createProduct: async (_, { storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         const isAdmin = hasRole(user, Roles.ADMIN);
         if (!isAdmin) {
           // Staff need explicit canAddProduct permission
@@ -1016,7 +1059,7 @@ const resolvers = {
     updateProduct: async (_, { id, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel, isAvailable }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         const isAdmin = hasRole(user, Roles.ADMIN);
         if (!isAdmin) {
           requireRole(user, Roles.STAFF);
@@ -1044,7 +1087,7 @@ const resolvers = {
     deleteProduct: async (_, { id }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         const isAdmin = hasRole(user, Roles.ADMIN);
         if (!isAdmin) {
           requireRole(user, Roles.STAFF);
@@ -1068,7 +1111,7 @@ const resolvers = {
     bulkUpsertProducts: async (_, { storeId, products, fileName, totalRows, totalColumns }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         const isAdmin = hasRole(user, Roles.ADMIN);
         if (!isAdmin) {
           requireRole(user, Roles.STAFF);
@@ -1090,12 +1133,12 @@ const resolvers = {
       }
     },
 
-    // ── Permission mutations ──────────────────────────────────────────────────
+    // â”€â”€ Permission mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     requestPermission: async (_, { storeId, requestType, reason, requestedMaxDiscountPercent, requestedProductPerms }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.STAFF);
         const req = await requestPermission({ staffId: user._id, storeId, requestType, reason, requestedMaxDiscountPercent, requestedProductPerms });
         // Notify store admin (non-blocking)
@@ -1110,7 +1153,7 @@ const resolvers = {
     approvePermissionRequest: async (_, { requestId, reviewNote, grantedMaxDiscountPercent, grantedProductPerms }, context) => {
       requireAuth(context);
       try {
-        const admin = await getOrCreateUser(context.user);
+        const admin = requireDbUser(context);
         requireRole(admin, Roles.ADMIN);
         const req = await approveRequest(requestId, { adminId: admin._id, reviewNote, grantedMaxDiscountPercent, grantedProductPerms });
         sendPermissionStatusNotification(req.staffId, { status: 'approved', requestType: req.requestType, reviewNote }).catch(() => {});
@@ -1124,7 +1167,7 @@ const resolvers = {
     rejectPermissionRequest: async (_, { requestId, reviewNote }, context) => {
       requireAuth(context);
       try {
-        const admin = await getOrCreateUser(context.user);
+        const admin = requireDbUser(context);
         requireRole(admin, Roles.ADMIN);
         const req = await rejectRequest(requestId, { adminId: admin._id, reviewNote });
         sendPermissionStatusNotification(req.staffId, { status: 'rejected', requestType: req.requestType, reviewNote }).catch(() => {});
@@ -1138,7 +1181,7 @@ const resolvers = {
     revokeStaffPermission: async (_, { staffId, storeId, permissionType }, context) => {
       requireAuth(context);
       try {
-        const admin = await getOrCreateUser(context.user);
+        const admin = requireDbUser(context);
         requireRole(admin, Roles.ADMIN);
         const perm = await revokePermission(staffId, storeId, { permissionType, adminId: admin._id });
         sendPermissionStatusNotification(staffId, { status: 'revoked', requestType: permissionType, reviewNote: '' }).catch(() => {});
@@ -1149,12 +1192,12 @@ const resolvers = {
       }
     },
 
-    // ── Discount mutations ────────────────────────────────────────────────────
+    // â”€â”€ Discount mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     generateDiscountCode: async (_, { storeId, discountPercent }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.STAFF);
         return await generateDiscountCode({ staffId: user._id, staffName: user.name || 'Staff', storeId, discountPercent });
       } catch (error) {
@@ -1166,7 +1209,7 @@ const resolvers = {
     validateDiscountCode: async (_, { code, storeId, subtotal }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
         return await validateDiscountCode({ code, storeId, subtotal });
       } catch (error) {
@@ -1175,16 +1218,16 @@ const resolvers = {
       }
     },
 
-    // ── End permission/discount mutations ─────────────────────────────────────
+    // â”€â”€ End permission/discount mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     updateUserRole: async (_, { userId, role, storeId }, context) => {
       requireAuth(context);
       try {
-        const caller = await getOrCreateUser(context.user);
+        const caller = requireDbUser(context);
         requireRole(caller, Roles.ADMIN);
         // Ownership check: the target user must belong to the caller's store.
         // Without this, an admin at Store A can reassign roles for staff at
-        // Store B by supplying a different userId — a privilege escalation vector.
+        // Store B by supplying a different userId â€” a privilege escalation vector.
         const User = require('./models/User');
         const target = await User.findById(userId);
         if (!target) {
@@ -1205,7 +1248,7 @@ const resolvers = {
     inviteStaff: async (_, { email, name, storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         await assertLimitNotReached(storeId, PLAN_LIMITS.MAX_STAFF);
         const Store = require('./models/Store');
@@ -1222,7 +1265,7 @@ const resolvers = {
     bulkInviteStaff: async (_, { invites, storeId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const Store = require('./models/Store');
         const store = await Store.findById(storeId);
@@ -1236,7 +1279,7 @@ const resolvers = {
     cancelInvite: async (_, { inviteId }, context) => {
       requireAuth(context);
       try {
-        const user = await getOrCreateUser(context.user);
+        const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         return await cancelInvite(inviteId);
       } catch (error) {
@@ -1248,7 +1291,7 @@ const resolvers = {
     removeStaff: async (_, { userId }, context) => {
       requireAuth(context);
       try {
-        const caller = await getOrCreateUser(context.user);
+        const caller = requireDbUser(context);
         requireRole(caller, Roles.ADMIN);
         // Ownership check: the target staff member must belong to the caller's
         // store. Without this, an admin at Store A can fire staff from Store B.
@@ -1270,7 +1313,7 @@ const resolvers = {
     },
   },
 
-  // ── Field resolvers ───────────────────────────────────────────────────────
+  // â”€â”€ Field resolvers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   Order: {
     id: (order) => order._id.toString(),
@@ -1324,7 +1367,7 @@ const resolvers = {
     store: (ss) => ss.store,
   },
 
-  // ── Subscription resolvers (field-level) ──────────────────────────────────
+  // â”€â”€ Subscription resolvers (field-level) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   StoreSubscription: {
     id:   (sub) => sub._id.toString(),
@@ -1354,7 +1397,7 @@ const resolvers = {
   },
 };
 
-// ── Subscription queries & mutations ─────────────────────────────────────────
+// â”€â”€ Subscription queries & mutations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Injected separately to keep the resolver map readable.
 
 resolvers.Query.availablePlans = async () => {
@@ -1369,7 +1412,7 @@ resolvers.Query.availablePlans = async () => {
 resolvers.Query.storeSubscription = async (_, { storeId }, context) => {
   requireAuth(context);
   try {
-    const user = await getOrCreateUser(context.user);
+    const user = requireDbUser(context);
     requireRole(user, Roles.ADMIN);
     return await getStoreSubscription(storeId);
   } catch (err) {
@@ -1381,7 +1424,7 @@ resolvers.Query.storeSubscription = async (_, { storeId }, context) => {
 resolvers.Query.featureAccessMap = async (_, { storeId }, context) => {
   requireAuth(context);
   try {
-    const user = await getOrCreateUser(context.user);
+    const user = requireDbUser(context);
     requireRole(user, Roles.ADMIN);
     return await getFeatureAccessMap(storeId);
   } catch (err) {
@@ -1393,7 +1436,7 @@ resolvers.Query.featureAccessMap = async (_, { storeId }, context) => {
 resolvers.Query.planUsage = async (_, { storeId, limitKey }, context) => {
   requireAuth(context);
   try {
-    const user = await getOrCreateUser(context.user);
+    const user = requireDbUser(context);
     requireRole(user, Roles.ADMIN);
     const result = await getRemainingUsage(storeId, limitKey);
     return { limitKey, ...result };
@@ -1406,7 +1449,7 @@ resolvers.Query.planUsage = async (_, { storeId, limitKey }, context) => {
 resolvers.Mutation.cancelSubscription = async (_, { storeId, cancelReason }, context) => {
   requireAuth(context);
   try {
-    const user = await getOrCreateUser(context.user);
+    const user = requireDbUser(context);
     requireRole(user, Roles.ADMIN);
     return await cancelSubscription(storeId, {
       cancelReason,
@@ -1422,7 +1465,7 @@ resolvers.Mutation.cancelSubscription = async (_, { storeId, cancelReason }, con
 resolvers.Mutation.setAdminSubscriptionOverride = async (_, { storeId, planName, days, overrideReason }, context) => {
   requireAuth(context);
   try {
-    const user = await getOrCreateUser(context.user);
+    const user = requireDbUser(context);
     requireRole(user, Roles.ADMIN);
     return await setAdminOverride(storeId, {
       planName,
@@ -1440,7 +1483,7 @@ resolvers.Mutation.setAdminSubscriptionOverride = async (_, { storeId, planName,
 resolvers.Mutation.createSubscriptionOrder = async (_, { storeId, planName, billingCycle }, context) => {
   requireAuth(context);
   try {
-    const user = await getOrCreateUser(context.user);
+    const user = requireDbUser(context);
     requireRole(user, Roles.ADMIN);
     const plans = await getAvailablePlans();
     const plan = plans.find(p => p.name === planName);
@@ -1461,11 +1504,11 @@ resolvers.Mutation.createSubscriptionOrder = async (_, { storeId, planName, bill
 resolvers.Mutation.confirmSubscriptionPayment = async (_, { storeId, planName, billingCycle, razorpayOrderId, razorpayPaymentId, razorpaySignature }, context) => {
   requireAuth(context);
   try {
-    const user = await getOrCreateUser(context.user);
+    const user = requireDbUser(context);
     requireRole(user, Roles.ADMIN);
     const isValid = verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
     if (!isValid) {
-      throw new GraphQLError('Payment verification failed — signature mismatch', { extensions: { code: 'PAYMENT_VERIFICATION_FAILED' } });
+      throw new GraphQLError('Payment verification failed â€” signature mismatch', { extensions: { code: 'PAYMENT_VERIFICATION_FAILED' } });
     }
     return await activatePlan(storeId, {
       planName,
@@ -1480,7 +1523,7 @@ resolvers.Mutation.confirmSubscriptionPayment = async (_, { storeId, planName, b
   }
 };
 
-// ── Helper: serialize PermissionRequest for GraphQL ──────────────────────────
+// â”€â”€ Helper: serialize PermissionRequest for GraphQL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function _formatRequest(r) {
   return {
     ...r,
@@ -1494,3 +1537,4 @@ function _formatRequest(r) {
 }
 
 module.exports = resolvers;
+
