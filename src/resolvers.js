@@ -1005,6 +1005,12 @@ const resolvers = {
         return await createStore({ name, address, lat, lon, storeCode }, context.user.uid);
       } catch (error) {
         logger.error(`createStore error: ${error.message}`);
+        if (error.code === 11000 && error.keyPattern?.storeCode) {
+          throw new GraphQLError(
+            `Store code "${storeCode?.trim().toUpperCase() || ''}" is already in use. Please choose a different store code.`,
+            { extensions: { code: 'BAD_USER_INPUT' } }
+          );
+        }
         throw error;
       }
     },
@@ -1017,6 +1023,12 @@ const resolvers = {
         return await updateStore(id, { name, address, lat, lon, storeCode, isActive });
       } catch (error) {
         logger.error(`updateStore error: ${error.message}`);
+        if (error.code === 11000 && error.keyPattern?.storeCode) {
+          throw new GraphQLError(
+            `Store code "${storeCode?.trim().toUpperCase() || ''}" is already in use. Please choose a different store code.`,
+            { extensions: { code: 'BAD_USER_INPUT' } }
+          );
+        }
         throw error;
       }
     },
