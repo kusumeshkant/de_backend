@@ -82,12 +82,12 @@ const startServer = async () => {
   // User model — loaded once here so the context function doesn't require() it
   // on every request (require() is cached, but explicit import is cleaner).
   const User = require('./models/User');
-
+  app.use(express.json());
   app.use(
     '/graphql',
     limiter,
     cors(corsOptions),
-    express.json(),
+    // express.json(),
     expressMiddleware(server, {
       /**
        * Request context — built once per GraphQL request, shared by all resolvers.
