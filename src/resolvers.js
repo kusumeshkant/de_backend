@@ -624,6 +624,88 @@ const resolvers = {
 
     // â”€â”€ Customer only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+    // ── Staff only (read) ───────────────────────────────────────────────────────────
+
+    myPermissions: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.STAFF);
+        const p = await getStaffPermissions(user._id, storeId);
+        return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || user._id.toString(), storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
+      } catch (error) { logger.error(); throw error; }
+    },
+
+    myPermissionRequests: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.STAFF);
+        const reqs = await getMyRequests(user._id, storeId);
+        return reqs.map(_formatRequest);
+      } catch (error) { logger.error(); throw error; }
+    },
+
+    // ── Admin only (read) ───────────────────────────────────────────────────────────
+
+    pendingPermissionRequests: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.ADMIN);
+        const reqs = await getPendingRequests(storeId);
+        return reqs.map(_formatRequest);
+      } catch (error) { logger.error(); throw error; }
+    },
+
+    allPermissionRequests: async (_, { storeId, status }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.ADMIN);
+        const reqs = await getAllRequests(storeId, { status });
+        return reqs.map(_formatRequest);
+      } catch (error) { logger.error(); throw error; }
+    },
+
+    staffPermissions: async (_, { staffId, storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.ADMIN);
+        const p = await getStaffPermissions(staffId, storeId);
+        return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || staffId, storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
+      } catch (error) { logger.error(); throw error; }
+    },
+
+    discountLogs: async (_, { storeId, limit, offset }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.ADMIN);
+        const logs = await getDiscountLogs(storeId, { limit, offset });
+        return logs.map(l => ({ ...l, id: l._id.toString(), orderId: l.orderId?.toString(), staffId: l.staffId?.toString(), appliedAt: l.appliedAt?.toISOString() }));
+      } catch (error) { logger.error(); throw error; }
+    },
+
+    productChangeLogs: async (_, { storeId, limit, offset }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.ADMIN);
+        const logs = await getProductChangeLogs(storeId, { limit, offset });
+        return logs.map(l => ({
+          ...l,
+          id:         l._id.toString(),
+          productId:  l.productId?.toString() || null,
+          storeId:    l.storeId?.toString(),
+          oldValues:  l.oldValues  ? JSON.stringify(l.oldValues)  : null,
+          newValues:  l.newValues  ? JSON.stringify(l.newValues)  : null,
+          createdAt:  l.createdAt?.toISOString(),
+        }));
+      } catch (error) { logger.error(); throw error; }
+    },
+
     myOrders: async (_, __, context) => {
       requireAuth(context);
       try {
@@ -771,88 +853,6 @@ const resolvers = {
         throw error;
       }
     },
-
-    // â”€â”€ Permission queries â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    myPermissions: async (_, { storeId }, context) => {
-      requireAuth(context);
-      try {
-        const user = requireDbUser(context);
-        requireRole(user, Roles.STAFF);
-        const p = await getStaffPermissions(user._id, storeId);
-        return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || user._id.toString(), storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
-      } catch (error) { logger.error(`myPermissions error: ${error.message}`); throw error; }
-    },
-
-    myPermissionRequests: async (_, { storeId }, context) => {
-      requireAuth(context);
-      try {
-        const user = requireDbUser(context);
-        requireRole(user, Roles.STAFF);
-        const reqs = await getMyRequests(user._id, storeId);
-        return reqs.map(_formatRequest);
-      } catch (error) { logger.error(`myPermissionRequests error: ${error.message}`); throw error; }
-    },
-
-    pendingPermissionRequests: async (_, { storeId }, context) => {
-      requireAuth(context);
-      try {
-        const user = requireDbUser(context);
-        requireRole(user, Roles.ADMIN);
-        const reqs = await getPendingRequests(storeId);
-        return reqs.map(_formatRequest);
-      } catch (error) { logger.error(`pendingPermissionRequests error: ${error.message}`); throw error; }
-    },
-
-    allPermissionRequests: async (_, { storeId, status }, context) => {
-      requireAuth(context);
-      try {
-        const user = requireDbUser(context);
-        requireRole(user, Roles.ADMIN);
-        const reqs = await getAllRequests(storeId, { status });
-        return reqs.map(_formatRequest);
-      } catch (error) { logger.error(`allPermissionRequests error: ${error.message}`); throw error; }
-    },
-
-    staffPermissions: async (_, { staffId, storeId }, context) => {
-      requireAuth(context);
-      try {
-        const user = requireDbUser(context);
-        requireRole(user, Roles.ADMIN);
-        const p = await getStaffPermissions(staffId, storeId);
-        return { ...p, id: p._id?.toString() || null, staffId: p.staffId?.toString() || staffId, storeId: p.storeId?.toString() || storeId, grantedAt: p.grantedAt?.toISOString() || null };
-      } catch (error) { logger.error(`staffPermissions error: ${error.message}`); throw error; }
-    },
-
-    discountLogs: async (_, { storeId, limit, offset }, context) => {
-      requireAuth(context);
-      try {
-        const user = requireDbUser(context);
-        requireRole(user, Roles.ADMIN);
-        const logs = await getDiscountLogs(storeId, { limit, offset });
-        return logs.map(l => ({ ...l, id: l._id.toString(), orderId: l.orderId?.toString(), staffId: l.staffId?.toString(), appliedAt: l.appliedAt?.toISOString() }));
-      } catch (error) { logger.error(`discountLogs error: ${error.message}`); throw error; }
-    },
-
-    productChangeLogs: async (_, { storeId, limit, offset }, context) => {
-      requireAuth(context);
-      try {
-        const user = requireDbUser(context);
-        requireRole(user, Roles.ADMIN);
-        const logs = await getProductChangeLogs(storeId, { limit, offset });
-        return logs.map(l => ({
-          ...l,
-          id:         l._id.toString(),
-          productId:  l.productId?.toString() || null,
-          storeId:    l.storeId?.toString(),
-          oldValues:  l.oldValues  ? JSON.stringify(l.oldValues)  : null,
-          newValues:  l.newValues  ? JSON.stringify(l.newValues)  : null,
-          createdAt:  l.createdAt?.toISOString(),
-        }));
-      } catch (error) { logger.error(`productChangeLogs error: ${error.message}`); throw error; }
-    },
-
-    // â”€â”€ Customer only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     createRazorpayOrder: async (_, { amount }, context) => {
       requireAuth(context);

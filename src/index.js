@@ -17,6 +17,9 @@ const typeDefs = require('./schema/typeDefs');
 const resolvers = require('./resolvers');
 const { verifyToken } = require('./middleware/auth');
 const logger = require('./utils/logger');
+const validateSchema = require('./utils/validate_schema');
+
+if (process.env.NODE_ENV !== 'production') validateSchema();
 
 // ── CORS allowlist ────────────────────────────────────────────────────────────
 // Only origins listed here can send cross-origin requests to the API.
@@ -49,6 +52,15 @@ const startServer = async () => {
   // Health check — responds immediately so Azure startup probe passes
   // before MongoDB finishes connecting
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+  // Version check — helps verify environment & deployment
+  app.get('/version', (req, res) => {
+    res.json({
+      env: process.env.NODE_ENV || "unknown",
+      version: "UAT-v2-products-pagination",
+      timestamp: new Date().toISOString()
+    });
+  });
 
   // Rate limiting — 200 requests per 15 minutes per IP
   const limiter = rateLimit({
