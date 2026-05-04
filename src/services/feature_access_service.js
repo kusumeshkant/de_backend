@@ -27,10 +27,6 @@ const _cache = new Map();
  * @param {string} storeId  MongoDB ObjectId as string
  */
 async function _getSubscriptionContext(storeId) {
-  // Kill switch: SUBSCRIPTION_ENABLED=false → treat every store as having no subscription.
-  // All feature checks will return false/empty — safe for Phase 1 which never calls these.
-  if (process.env.SUBSCRIPTION_ENABLED === 'false') return null;
-
   const now    = Date.now();
   const cached = _cache.get(storeId);
   if (cached && cached.expiresAt > now) return cached;
@@ -104,6 +100,8 @@ function _isPeriodValid(sub) {
  * @returns {Promise<boolean>}
  */
 async function canUseFeature(storeId, featureKey) {
+  if (process.env.SUBSCRIPTION_ENABLED !== 'true') return true;
+
   const ctx = await _getSubscriptionContext(storeId.toString());
   if (!ctx) return false;
 
@@ -124,6 +122,8 @@ async function canUseFeature(storeId, featureKey) {
  * @param {string} [featureName]  Human-readable name for the error message
  */
 async function assertFeatureAccess(storeId, featureKey, featureName) {
+  if (process.env.SUBSCRIPTION_ENABLED !== 'true') return;
+
   const allowed = await canUseFeature(storeId, featureKey);
   if (!allowed) {
     const label = featureName || featureKey;
@@ -148,13 +148,17 @@ async function assertFeatureAccess(storeId, featureKey, featureName) {
  * @returns {Promise<Record<string, boolean>>}
  */
 async function getFeatureAccessMap(storeId) {
-  const ctx = await _getSubscriptionContext(storeId.toString());
   const map = {};
-
   for (const key of Object.values(FEATURE_KEYS)) {
     map[key] = false;
   }
 
+  if (process.env.SUBSCRIPTION_ENABLED !== 'true') {
+    for (const key of Object.values(FEATURE_KEYS)) map[key] = true;
+    return map;
+  }
+
+  const ctx = await _getSubscriptionContext(storeId.toString());
   if (!ctx) return map;
 
   const { sub, plan } = ctx;
