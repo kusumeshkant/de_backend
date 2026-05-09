@@ -28,7 +28,8 @@ if (process.env.NODE_ENV !== 'production') validateSchema();
 // on behalf of a logged-in user.
 const ALLOWED_ORIGINS = [
   'https://dqstore.in',
-  'http://localhost:3000', // local development
+  'https://app.dqstore.in',
+  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000'] : []),
 ];
 
 const corsOptions = {
