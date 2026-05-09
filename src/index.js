@@ -18,6 +18,23 @@ const resolvers = require('./resolvers');
 const { verifyToken } = require('./middleware/auth');
 const logger = require('./utils/logger');
 
+const ALLOWED_ORIGINS = [
+  'https://dqstore.in',
+  'https://app.dqstore.in',
+  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000'] : []),
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin '${origin}' is not allowed`));
+    }
+  },
+  credentials: false,
+};
+
 const startServer = async () => {
   if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
 
@@ -45,7 +62,7 @@ const startServer = async () => {
   app.use(
     '/graphql',
     limiter,
-    cors(),
+    cors(corsOptions),
     express.json(),
     expressMiddleware(server, {
       context: async ({ req }) => {
