@@ -21,6 +21,7 @@ const logger = require('./utils/logger');
 const ALLOWED_ORIGINS = [
   'https://dqstore.in',
   'https://app.dqstore.in',
+  'https://staff.dqstore.in',
   ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000'] : []),
 ];
 
