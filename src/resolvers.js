@@ -179,27 +179,27 @@ const resolvers = {
           user = await User.findOne({ firebase_uid: context.user.uid });
 
           if (user) {
-            // Strict separation: one account, one app. Admin and staff accounts
-            // cannot be used to shop â€” they must register a separate customer account.
-            if (hasRole(user, Roles.ADMIN)) {
-              throw new GraphQLError(
-                'This account is registered as a store admin. Admin and customer accounts must be separate â€” please use a different account to shop on DQ.',
-                { extensions: { code: 'FORBIDDEN', hint: RoleHint.ADMIN_NO_CUSTOMER } }
-              );
-            }
-            if (hasRole(user, Roles.STAFF)) {
-              throw new GraphQLError(
-                'This account is registered as a store staff member. Staff and customer accounts must be separate â€” please use a different account to shop on DQ.',
-                { extensions: { code: 'FORBIDDEN', hint: RoleHint.STAFF_NO_CUSTOMER } }
-              );
-            }
+            // Customer role wins — a dual-role account (admin+customer or staff+customer)
+            // is allowed to shop. Only block if the customer role is absent.
             if (!hasRole(user, Roles.CUSTOMER)) {
+              if (hasRole(user, Roles.ADMIN)) {
+                throw new GraphQLError(
+                  'This account is registered as a store admin. To also shop on DQ, tap “Add Customer Access” in the login screen.',
+                  { extensions: { code: 'FORBIDDEN', hint: RoleHint.ADMIN_NO_CUSTOMER } }
+                );
+              }
+              if (hasRole(user, Roles.STAFF)) {
+                throw new GraphQLError(
+                  'This account is registered as a store staff member. To also shop on DQ, tap “Add Customer Access” in the login screen.',
+                  { extensions: { code: 'FORBIDDEN', hint: RoleHint.STAFF_NO_CUSTOMER } }
+                );
+              }
               throw new GraphQLError(
                 'This account does not have customer access. Please sign up on the DQ App to shop.',
                 { extensions: { code: 'FORBIDDEN', hint: RoleHint.NO_CUSTOMER } }
               );
             }
-            // user has customer role and no conflicting roles â€” allowed
+            // user has customer role — allowed (even if also admin or staff)
           } else {
             // First-ever login to DQ App â€” safe to auto-create as customer.
             const newCustomer = await getOrCreateUser(context.user);
