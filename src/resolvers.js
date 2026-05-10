@@ -738,12 +738,11 @@ const resolvers = {
     // â”€â”€ Any authenticated user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /**
-     * Called by the DQ App (customer app) signup flow when a staff or admin
-     * Google account wants to also shop as a customer.
+     * Adds 'customer' to the authenticated user's roles array using $addToSet —
+     * non-destructive and idempotent. Admin and staff accounts can call this to
+     * also shop on DQ; their existing roles are preserved.
      *
-     * Adds 'customer' to the roles array without touching existing roles.
-     * Customer is the lowest-privilege role â€” no guard beyond authentication
-     * is needed. Idempotent: safe to call even if already a customer.
+     * Customer is the lowest-privilege role — no role guard beyond authentication.
      */
     registerAsCustomer: async (_, __, context) => {
       requireAuth(context);
@@ -751,27 +750,17 @@ const resolvers = {
         const User = require('./models/User');
         const user = await User.findOne({ firebase_uid: context.user.uid });
         if (!user) {
-          // First-ever login â€” create as customer
+          // First-ever login — create as customer
           const newCustomer = await getOrCreateUser(context.user);
           return await getProfile(newCustomer._id);
         }
-        if (hasRole(user, Roles.ADMIN)) {
-          throw new GraphQLError(
-            'This account is registered as a store admin. Admin and customer accounts must be separate â€” please use a different account to shop on DQ.',
-            { extensions: { code: 'FORBIDDEN', hint: 'ADMIN_NO_CUSTOMER' } }
-          );
-        }
-        if (hasRole(user, Roles.STAFF)) {
-          throw new GraphQLError(
-            'This account is registered as a store staff member. Staff and customer accounts must be separate â€” please use a different account to shop on DQ.',
-            { extensions: { code: 'FORBIDDEN', hint: 'STAFF_NO_CUSTOMER' } }
-          );
-        }
         if (hasRole(user, Roles.CUSTOMER)) {
+          // Already a customer — idempotent, return current profile
           return await getProfile(user._id);
         }
+        // Add customer role without touching existing roles (admin/staff preserved)
         await ensureCustomerRole(user._id);
-        logger.info(`registerAsCustomer: uid=${context.user.uid} â€” customer role added`);
+        logger.info(`registerAsCustomer: uid=${context.user.uid} previous_roles=[${user.roles}] — customer role added`);
         return await getProfile(user._id);
       } catch (error) {
         logger.error(`registerAsCustomer error: ${error.message}`);
