@@ -4,13 +4,26 @@ const logger = require('../utils/logger_cf');
 // ── Firebase Admin initialisation ─────────────────────────────────────────────
 // Runs once at module load time. Never call initializeApp() elsewhere.
 if (!admin.apps.length) {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    // Production (Cloudflare Workers / Azure): JSON string in env var
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-  } else {
-    // Local development: GOOGLE_APPLICATION_CREDENTIALS file path in env
-    admin.initializeApp({ credential: admin.credential.applicationDefault() });
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      // Production / Render / Azure: JSON string in env var.
+      // The value must be a single-line minified JSON string — actual newlines
+      // in the private_key field must be the two-character sequence \n, not
+      // real line breaks, or JSON.parse will throw.
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    } else {
+      // Local development: GOOGLE_APPLICATION_CREDENTIALS file path in env
+      admin.initializeApp({ credential: admin.credential.applicationDefault() });
+    }
+  } catch (err) {
+    // Log to stderr immediately — this runs before the Winston logger is loaded.
+    // A crash here produces no output without this guard, making it impossible
+    // to diagnose from Render/Azure logs.
+    console.error('[auth] Firebase Admin init failed:', err.message);
+    console.error('[auth] Hint: FIREBASE_SERVICE_ACCOUNT must be a valid single-line JSON string.');
+    console.error('[auth] Common cause: newlines in private_key were not escaped as \\n.');
+    process.exit(1);
   }
 }
 
