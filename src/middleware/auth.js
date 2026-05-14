@@ -32,7 +32,8 @@ async function verifyToken(req) {
       phone: decoded.phone_number || null,
       email: decoded.email || null,
     };
-  } catch {
+  } catch (err) {
+    console.warn('[Auth] Token verification failed:', err.code ?? err.message);
     return null;
   }
 }

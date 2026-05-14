@@ -19,11 +19,20 @@ const { verifyToken } = require('./middleware/auth');
 const logger = require('./utils/logger');
 
 const ALLOWED_ORIGINS = [
+  // Production
   'https://dqstore.in',
   'https://app.dqstore.in',
   'https://staff.dqstore.in',
   'https://dq.dqstore.in',
-  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000'] : []),
+  // UAT
+  'https://uat-app.dqstore.in',
+  'https://uat-staff.dqstore.in',
+  'https://uat-admin.dqstore.in',
+  // DEV
+  'https://dev-app.dqstore.in',
+  'https://dev-staff.dqstore.in',
+  'https://dev-admin.dqstore.in',
+  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000', 'http://localhost:5000', 'http://localhost:8080'] : []),
 ];
 
 const corsOptions = {
