@@ -1,4 +1,5 @@
-# Azure Container Apps optimised image
+# Production image — compatible with Azure Container Apps and Render.
+# PORT is read from the environment (process.env.PORT || 4000).
 FROM node:20-alpine
 
 # Create non-root user for security
