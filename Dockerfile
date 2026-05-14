@@ -14,6 +14,11 @@ RUN npm install --omit=dev
 # Copy application source
 COPY . .
 
+# Create logs directory that Winston File transports require at runtime.
+# The logs/ dir is excluded from Docker context via .dockerignore so it
+# must be created explicitly here.
+RUN mkdir -p /app/logs
+
 # Transfer ownership to non-root user
 RUN chown -R appuser:appgroup /app
 
