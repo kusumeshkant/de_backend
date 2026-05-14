@@ -45,5 +45,19 @@ services:
       - key: APPLICATIONINSIGHTS_CONNECTION_STRING
         value: ""
 
+      # Razorpay test-mode keys — set manually in Render dashboard.
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+      # Resend transactional email — set manually in Render dashboard.
+      - key: RESEND_API_KEY
+        sync: false
+
+      # Subscription kill switch — set to 'false' to disable entirely.
+      - key: SUBSCRIPTION_ENABLED
+        value: "true"
+
       # PORT is set automatically by Render. Do not override it here.
       # The app reads process.env.PORT || 4000 and binds to 0.0.0.0.
