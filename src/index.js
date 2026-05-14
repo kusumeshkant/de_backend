@@ -27,9 +27,20 @@ if (process.env.NODE_ENV !== 'production') validateSchema();
 // (dqstore.in, future admin web panel) from third-party sites making requests
 // on behalf of a logged-in user.
 const ALLOWED_ORIGINS = [
+  // Production
   'https://dqstore.in',
   'https://app.dqstore.in',
-  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000'] : []),
+  'https://staff.dqstore.in',
+  'https://dq.dqstore.in',
+  // UAT
+  'https://uat-app.dqstore.in',
+  'https://uat-staff.dqstore.in',
+  'https://uat-admin.dqstore.in',
+  // DEV
+  'https://dev-app.dqstore.in',
+  'https://dev-staff.dqstore.in',
+  'https://dev-admin.dqstore.in',
+  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000', 'http://localhost:5000', 'http://localhost:8080'] : []),
 ];
 
 const corsOptions = {
