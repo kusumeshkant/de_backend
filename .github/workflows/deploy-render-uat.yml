@@ -79,13 +79,13 @@ jobs:
         env:
           RENDER_URL: ${{ vars.RENDER_UAT_URL }}
         run: |
-          echo "Polling $RENDER_URL/health (up to 6 minutes)..."
-          for i in $(seq 1 12); do
+          echo "Polling $RENDER_URL/health (up to 10 minutes)..."
+          for i in $(seq 1 20); do
             sleep 30
-            echo "Attempt $i/12..."
-            if curl -fsSL "$RENDER_URL/health" > /dev/null 2>&1; then
+            echo "Attempt $i/20..."
+            if curl -fsSL --connect-timeout 10 --max-time 15 "$RENDER_URL/health" > /dev/null 2>&1; then
               echo "Health check passed — Render UAT is live."
               exit 0
             fi
           done
-          echo "Health check failed after 6 minutes." && exit 1
+          echo "Health check failed after 10 minutes." && exit 1
