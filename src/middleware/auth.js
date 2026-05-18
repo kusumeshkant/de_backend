@@ -3,27 +3,45 @@ const logger = require('../utils/logger_cf');
 
 // ── Firebase Admin initialisation ─────────────────────────────────────────────
 // Runs once at module load time. Never call initializeApp() elsewhere.
+//
+// Initialization is intentionally non-fatal in serverless environments.
+// If credentials are missing or malformed, _firebaseInitFailed is set to true
+// and all token verification returns null (unauthenticated) instead of crashing
+// the worker process. Public resolvers continue to function; protected resolvers
+// return UNAUTHENTICATED GraphQL errors instead of 500s.
+let _firebaseInitFailed = false;
+
 if (!admin.apps.length) {
   try {
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      // Production / Render / Azure: JSON string in env var.
-      // The value must be a single-line minified JSON string — actual newlines
-      // in the private_key field must be the two-character sequence \n, not
-      // real line breaks, or JSON.parse will throw.
+      // Serverless / Azure / Render: JSON string in env var.
+      // Must be a single-line minified JSON — private_key newlines as \n escapes.
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
       admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-    } else {
-      // Local development: GOOGLE_APPLICATION_CREDENTIALS file path in env
+      console.log('[auth] Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT');
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      // Local development: file path in env var (set in .env)
       admin.initializeApp({ credential: admin.credential.applicationDefault() });
+      console.log('[auth] Firebase Admin initialized via GOOGLE_APPLICATION_CREDENTIALS');
+    } else {
+      // No credentials found — degrade gracefully instead of crashing.
+      // Serverless workers must not call process.exit() during module init.
+      _firebaseInitFailed = true;
+      console.error('[auth] STARTUP WARNING: Firebase Admin not initialized.');
+      console.error('[auth] Neither FIREBASE_SERVICE_ACCOUNT nor GOOGLE_APPLICATION_CREDENTIALS is set.');
+      console.error('[auth] All authenticated requests will be rejected until this is resolved.');
+      console.error('[auth] Fix: set FIREBASE_SERVICE_ACCOUNT in your deployment environment variables.');
     }
   } catch (err) {
-    // Log to stderr immediately — this runs before the Winston logger is loaded.
-    // A crash here produces no output without this guard, making it impossible
-    // to diagnose from Render/Azure logs.
-    console.error('[auth] Firebase Admin init failed:', err.message);
-    console.error('[auth] Hint: FIREBASE_SERVICE_ACCOUNT must be a valid single-line JSON string.');
-    console.error('[auth] Common cause: newlines in private_key were not escaped as \\n.');
-    process.exit(1);
+    _firebaseInitFailed = true;
+    console.error('[auth] Firebase Admin init FAILED:', err.message);
+    if (err.message.includes('JSON')) {
+      console.error('[auth] Hint: FIREBASE_SERVICE_ACCOUNT JSON is malformed.');
+      console.error('[auth] Ensure private_key newlines are \\n escape sequences, not real line breaks.');
+    }
+    console.error('[auth] Degrading to unauthenticated-only mode. Protected resolvers will reject all requests.');
+    // DO NOT call process.exit() — serverless workers must survive module initialization.
+    // A crash here kills the worker and returns 500 for every request with zero diagnostics.
   }
 }
 
@@ -55,6 +73,11 @@ const FIREBASE_ERROR_TYPE = {
  * @returns {Promise<{uid: string, email: string|null, phone: string|null}|null>}
  */
 async function verifyToken(req) {
+  if (_firebaseInitFailed) {
+    logger.warn('[auth] verifyToken called but Firebase Admin failed to initialize — returning null');
+    return null;
+  }
+
   const authHeader = req.headers['authorization'] || '';
 
   // No header or wrong scheme — unauthenticated request, not an error
