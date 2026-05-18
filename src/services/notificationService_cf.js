@@ -97,4 +97,59 @@ async function sendNewOrderToStaff(storeId, { orderId, storeName, itemCount, gra
   }
 }
 
-module.exports = { sendNotification, sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff };
+const REQUEST_TYPE_LABELS = {
+  discount:     'Discount Permission',
+  product_edit: 'Product Edit Permission',
+  bulk_upload:  'Bulk Upload Permission',
+};
+
+async function sendPermissionRequestNotification(storeId, { staffName, requestType }) {
+  try {
+    const adminUsers = await User.find({
+      storeId,
+      roles: 'ADMIN',
+      fcmToken: { $ne: null },
+    });
+
+    const label = REQUEST_TYPE_LABELS[requestType] ?? requestType;
+    await Promise.all(adminUsers.map((u) =>
+      sendNotification(u.fcmToken, {
+        title: 'New Permission Request',
+        body: `${staffName} requested ${label}. Review in the admin panel.`,
+        data: { type: 'permission_request', requestType },
+      })
+    ));
+  } catch (err) {
+    console.warn(`[FCM] sendPermissionRequestNotification error: ${err.message}`);
+  }
+}
+
+async function sendPermissionStatusNotification(staffId, { status, requestType, reviewNote }) {
+  try {
+    const user = await User.findById(staffId);
+    if (!user?.fcmToken) return;
+
+    const label = REQUEST_TYPE_LABELS[requestType] ?? requestType;
+    const statusText = status === 'approved' ? 'approved' : status === 'rejected' ? 'rejected' : 'revoked';
+    const body = reviewNote
+      ? `Your ${label} request was ${statusText}. Note: ${reviewNote}`
+      : `Your ${label} request was ${statusText}.`;
+
+    await sendNotification(user.fcmToken, {
+      title: `Permission Request ${statusText.charAt(0).toUpperCase() + statusText.slice(1)}`,
+      body,
+      data: { type: 'permission_status', status, requestType },
+    });
+  } catch (err) {
+    console.warn(`[FCM] sendPermissionStatusNotification error: ${err.message}`);
+  }
+}
+
+module.exports = {
+  sendNotification,
+  sendOrderConfirmation,
+  sendOrderStatusUpdate,
+  sendNewOrderToStaff,
+  sendPermissionRequestNotification,
+  sendPermissionStatusNotification,
+};

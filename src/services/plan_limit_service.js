@@ -1,7 +1,6 @@
 const { GraphQLError }   = require('graphql');
 const StoreSubscription  = require('../models/StoreSubscription');
 const SubscriptionPlan   = require('../models/SubscriptionPlan');
-const Product            = require('../models/Product');
 const User               = require('../models/User');
 const Order              = require('../models/Order');
 const { SUBSCRIPTION_STATUS, PLAN_LIMITS, UNLIMITED } = require('../constants/feature_keys');
@@ -27,21 +26,25 @@ async function _liveStaffCount(storeId) {
   return User.countDocuments({ storeId, roles: Roles.STAFF });
 }
 
-async function _liveProductCount(storeId) {
-  return Product.countDocuments({ storeId, isAvailable: { $ne: false } });
-}
-
 async function _liveOrdersThisMonth(storeId) {
   const now   = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   return Order.countDocuments({ storeId, createdAt: { $gte: start } });
 }
 
+// Returns the number of stores the admin who owns storeId currently has.
+// With the current single-storeId model this is always 1 when the admin has a store.
+// Update this when multi-store (storeIds[]) is introduced.
+async function _liveStoreCount(storeId) {
+  const { Roles } = require('../constants/roles');
+  const admin = await User.findOne({ storeId, roles: Roles.ADMIN }).select('_id').lean();
+  return admin ? 1 : 0;
+}
+
 const _liveCounters = {
   [PLAN_LIMITS.MAX_STAFF]:            _liveStaffCount,
-  [PLAN_LIMITS.MAX_PRODUCTS]:         _liveProductCount,
   [PLAN_LIMITS.MAX_ORDERS_PER_MONTH]: _liveOrdersThisMonth,
-  [PLAN_LIMITS.MAX_STORES]:           async () => 1, // single-store per sub for now
+  [PLAN_LIMITS.MAX_STORES]:           _liveStoreCount,
 };
 
 // ── Subscription / plan fetch ─────────────────────────────────────────────────
@@ -91,7 +94,6 @@ async function assertLimitNotReached(storeId, limitKey, addCount = 1) {
   if (current + addCount > cap) {
     const friendlyNames = {
       [PLAN_LIMITS.MAX_STAFF]:            'staff members',
-      [PLAN_LIMITS.MAX_PRODUCTS]:         'products',
       [PLAN_LIMITS.MAX_ORDERS_PER_MONTH]: 'orders this month',
       [PLAN_LIMITS.MAX_STORES]:           'stores',
     };
@@ -144,18 +146,18 @@ async function getRemainingUsage(storeId, limitKey) {
  * @param {string} storeId
  */
 async function refreshUsageCounters(storeId) {
-  const [staffCount, productCount, ordersThisMonth] = await Promise.all([
+  const [staffCount, ordersThisMonth, storeCount] = await Promise.all([
     _liveStaffCount(storeId),
-    _liveProductCount(storeId),
     _liveOrdersThisMonth(storeId),
+    _liveStoreCount(storeId),
   ]);
 
   await StoreSubscription.findOneAndUpdate(
     { storeId },
     {
       'usageCounters.staffCount':      staffCount,
-      'usageCounters.productCount':    productCount,
       'usageCounters.ordersThisMonth': ordersThisMonth,
+      'usageCounters.storeCount':      storeCount,
       'usageCounters.lastCountedAt':   new Date(),
     }
   );

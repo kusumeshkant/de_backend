@@ -1,19 +1,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# LEGACY — manual-only emergency trigger.
-# Automatic UAT deploys now go through deploy-azure-uat.yml (DEPLOY_PROVIDER=azure)
-# or deploy-render-uat.yml (DEPLOY_PROVIDER=render).
-# This file is preserved so Azure UAT can be force-triggered manually at any
-# time regardless of the active DEPLOY_PROVIDER setting.
+# Azure UAT deployment — runs automatically when DEPLOY_PROVIDER=azure.
+#
+# Switching providers:
+#   GitHub → Settings → Secrets and variables → Actions → Variables
+#   Set DEPLOY_PROVIDER = azure   (this file runs)
+#   Set DEPLOY_PROVIDER = render  (deploy-render-uat.yml runs instead)
+#
+# Branch strategy:  develop → UAT   |   main → Production (deploy.yml)
 # ─────────────────────────────────────────────────────────────────────────────
-name: Build and Deploy to Azure Container Apps (UAT) — Manual
+name: Deploy UAT → Azure Container Apps
 
 on:
-  workflow_dispatch:
-    inputs:
-      reason:
-        description: "Reason for manual Azure UAT deploy"
-        required: false
-        default: "Emergency / override"
+  push:
+    branches: [develop]
 
 env:
   REGISTRY: ghcr.io
@@ -23,6 +22,8 @@ env:
 
 jobs:
   build-and-deploy:
+    name: Build → Push → Deploy (Azure)
+    if: vars.DEPLOY_PROVIDER == 'azure'
     runs-on: ubuntu-latest
     permissions:
       contents: read

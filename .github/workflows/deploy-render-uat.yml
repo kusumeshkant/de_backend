@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Render UAT deployment — runs automatically when DEPLOY_PROVIDER=render.
+#
+# Switching providers:
+#   GitHub → Settings → Secrets and variables → Actions → Variables
+#   Set DEPLOY_PROVIDER = render  (this file runs)
+#   Set DEPLOY_PROVIDER = azure   (deploy-azure-uat.yml runs instead)
+#
+# Required GitHub secrets (set once in repo Settings → Secrets):
+#   RENDER_DEPLOY_HOOK_UAT  — Render deploy hook URL for the dq-backend-uat service
+#                             Render dashboard → dq-backend-uat → Settings → Deploy Hook
+#
+# Required GitHub variables (set in repo Settings → Variables):
+#   DEPLOY_PROVIDER         — must be "render" for this workflow to run
+#   RENDER_UAT_URL          — base URL of the Render service, e.g.
+#                             https://dq-backend-uat.onrender.com
+#
+# Runtime parity with Azure:
+#   • Same Dockerfile (multi-stage node:20-alpine)
+#   • Same NODE_ENV, MONGO_URI, FIREBASE_SERVICE_ACCOUNT env var names
+#   • Same /health endpoint
+#   • Same GraphQL endpoint at /graphql
+#   • Docker image is also pushed to GHCR for audit trail and rollback reference
+#
+# Branch strategy:  develop → UAT   |   main → Production (deploy.yml)
+# ─────────────────────────────────────────────────────────────────────────────
+name: Deploy UAT → Render
+
+on:
+  push:
+    branches: [develop]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-deploy:
+    name: Build → Push (GHCR audit) → Deploy (Render)
+    if: vars.DEPLOY_PROVIDER == 'render'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Push to GHCR for audit trail and rollback reference.
+      # Render builds its own image from the same Dockerfile (same binary).
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:uat-latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:uat-${{ github.sha }}
+
+      # Trigger Render to rebuild and redeploy from the develop branch Dockerfile.
+      - name: Trigger Render deployment
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_UAT }}
+        run: |
+          curl -fsSL -X POST "$RENDER_DEPLOY_HOOK" \
+            || (echo "Failed to trigger Render deploy hook" && exit 1)
+          echo "Render deployment triggered (SHA: ${{ github.sha }})"
+
+      # Render Docker builds take 3-5 minutes. Poll /health with retries.
+      - name: Wait for Render and health check
+        env:
+          RENDER_URL: ${{ vars.RENDER_UAT_URL }}
+        run: |
+          echo "Polling $RENDER_URL/health (up to 10 minutes)..."
+          for i in $(seq 1 20); do
+            sleep 30
+            echo "Attempt $i/20..."
+            if curl -fsSL --connect-timeout 10 --max-time 15 "$RENDER_URL/health" > /dev/null 2>&1; then
+              echo "Health check passed — Render UAT is live."
+              exit 0
+            fi
+          done
+          echo "Health check failed after 10 minutes." && exit 1

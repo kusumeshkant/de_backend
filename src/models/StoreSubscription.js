@@ -67,8 +67,8 @@ const storeSubscriptionSchema = new mongoose.Schema(
     // ── Usage counters (refreshed by plan_limit_service) ──────────────────────
     usageCounters: {
       staffCount:         { type: Number, default: 0 },
-      productCount:       { type: Number, default: 0 },
       ordersThisMonth:    { type: Number, default: 0 },
+      storeCount:         { type: Number, default: 1 },
       lastCountedAt:      { type: Date },
     },
   },

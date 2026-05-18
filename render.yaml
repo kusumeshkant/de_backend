@@ -1,0 +1,63 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Render Infrastructure as Code — DQ Backend UAT
+#
+# This file defines the dq-backend-uat service on Render.
+# It is the reference definition. The actual service must be created once
+# in the Render dashboard (or via `render blueprint apply`).
+#
+# Environment variables marked sync:false MUST be set manually in
+# the Render dashboard under the service's Environment tab.
+# They are never stored in this file.
+#
+# Region: Singapore (closest to India Central — matches Azure Central India)
+# Plan:   starter ($7/month) — always-on, no cold-start delays
+#         Free tier is supported but causes ~60s cold starts for health checks.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: dq-backend-uat
+    env: docker
+    region: singapore
+    plan: starter
+    branch: develop
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+
+    envVars:
+      # Runtime environment — staging enables schema validation,
+      # introspection, and dev CORS origins (same behaviour as Azure UAT).
+      - key: NODE_ENV
+        value: staging
+
+      # MongoDB Atlas connection string — set manually in Render dashboard.
+      - key: MONGO_URI
+        sync: false
+
+      # Firebase Admin SDK service account — set manually in Render dashboard.
+      # Paste the full JSON object as a single-line string (same format as Azure).
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+
+      # Application Insights — Azure-specific. Leave empty on Render.
+      # Render provides its own logging via the dashboard log stream.
+      - key: APPLICATIONINSIGHTS_CONNECTION_STRING
+        value: ""
+
+      # Razorpay test-mode keys — set manually in Render dashboard.
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+      # Resend transactional email — set manually in Render dashboard.
+      - key: RESEND_API_KEY
+        sync: false
+
+      # Subscription kill switch — set to 'false' to disable entirely.
+      - key: SUBSCRIPTION_ENABLED
+        value: "true"
+
+      # PORT is set automatically by Render. Do not override it here.
+      # The app reads process.env.PORT || 4000 and binds to 0.0.0.0.
