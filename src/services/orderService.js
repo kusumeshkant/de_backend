@@ -12,6 +12,18 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     throw new ErrorHandler('Cart is empty', 400);
   }
 
+  // Server-side price validation — recompute total from live catalogue prices to
+  // prevent client-side price manipulation (e.g. submitting grandTotal: 1 for a
+  // ₹5000 cart). Tolerates up to 50% discount to allow legitimate coupon use.
+  let serverComputedTotal = 0;
+  for (const item of items) {
+    const product = await Product.findOne({ barcode: item.barcode, storeId });
+    if (product) serverComputedTotal += product.price * (item.quantity ?? 1);
+  }
+  if (serverComputedTotal > 0 && grandTotal < serverComputedTotal * 0.5) {
+    throw new ErrorHandler('Order total validation failed. Please restart checkout.', 400);
+  }
+
   const order = new Order({
     user: userId,
     storeId,

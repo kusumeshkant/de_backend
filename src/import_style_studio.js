@@ -13,8 +13,8 @@ const mongoose = require('mongoose');
 const Store = require('./models/Store');
 const Product = require('./models/Product');
 
-const MONGODB_URI = process.env.MONGODB_URI ||
-  'mongodb+srv://dq_db:Klpd420dq@cluster0.p7pe89o.mongodb.net/dq_app';
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) throw new Error('MONGODB_URI env var is required');
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
