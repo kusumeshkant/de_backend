@@ -4,6 +4,7 @@ const Store = require('../models/Store');
 const Product = require('../models/Product');
 const CartCheckEvent = require('../models/CartCheckEvent');
 const User = require('../models/User');
+const PendingPayment = require('../models/PendingPayment');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
 
@@ -12,17 +13,18 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     throw new ErrorHandler('Cart is empty', 400);
   }
 
-  // Server-side price validation — recompute total from live catalogue prices to
-  // prevent client-side price manipulation (e.g. submitting grandTotal: 1 for a
-  // ₹5000 cart). Tolerates up to 50% discount to allow legitimate coupon use.
-  let serverComputedTotal = 0;
-  for (const item of items) {
-    const product = await Product.findOne({ barcode: item.barcode, storeId });
-    if (product) serverComputedTotal += product.price * (item.quantity ?? 1);
+  // Verify payment amount via server-anchored PendingPayment record.
+  // PendingPayment was created by createRazorpayOrderFromCart with a
+  // server-computed price — the client never controlled this amount.
+  const pending = await PendingPayment.findOne({ razorpayOrderId });
+  if (!pending) {
+    throw new ErrorHandler('Payment session not found or expired. Please restart checkout.', 400);
   }
-  if (serverComputedTotal > 0 && grandTotal < serverComputedTotal * 0.5) {
-    throw new ErrorHandler('Order total validation failed. Please restart checkout.', 400);
+  if (pending.userId.toString() !== userId.toString()) {
+    throw new ErrorHandler('Payment session does not belong to this account.', 403);
   }
+  const authorizedTotal = pending.serverTotal;
+  await PendingPayment.deleteOne({ razorpayOrderId });
 
   const order = new Order({
     user: userId,
@@ -30,7 +32,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     items,
     total,
     tax,
-    grandTotal,
+    grandTotal: authorizedTotal,  // server-computed, not client-supplied
     status: 'pending',
     razorpayOrderId,
     razorpayPaymentId,
@@ -71,7 +73,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     orderId: order._id,
     storeName: store?.name ?? null,
     itemCount: items.length,
-    grandTotal,
+    grandTotal: authorizedTotal,
   }).catch(() => {});
 
   return order;

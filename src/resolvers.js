@@ -7,7 +7,7 @@ const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff, sendP
 const { getProductByBarcode, getStoreProducts, getProductsPaginated, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated } = require('./services/storeService');
 const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getOrdersPaginated, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
-const { createRazorpayOrder, verifyPayment } = require('./services/razorpayService');
+const { createRazorpayOrderForAmount, createRazorpayOrderFromCart, verifyPayment } = require('./services/razorpayService');
 const { requestPermission, getPendingRequests, getAllRequests, getMyRequests, approveRequest, rejectRequest, revokePermission, getStaffPermissions, checkPermission } = require('./services/permissionService');
 const { generateDiscountCode, validateDiscountCode, consumeDiscountCode, getDiscountLogs } = require('./services/discountService');
 const { logProductCreate, logProductUpdate, logProductDelete, getProductChangeLogs } = require('./services/auditLogService');
@@ -843,12 +843,12 @@ const resolvers = {
       }
     },
 
-    createRazorpayOrder: async (_, { amount }, context) => {
+    createRazorpayOrder: async (_, { storeId, items, discountCode }, context) => {
       requireAuth(context);
       try {
         const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
-        return await createRazorpayOrder(amount);
+        return await createRazorpayOrderFromCart({ userId: user._id, storeId, items, discountCode });
       } catch (error) {
         logger.error(`createRazorpayOrder error: ${error.message}`);
         throw error;
@@ -1495,7 +1495,7 @@ resolvers.Mutation.createSubscriptionOrder = async (_, { storeId, planName, bill
     if (!amount || amount <= 0) {
       throw new GraphQLError('Invalid plan amount', { extensions: { code: 'BAD_REQUEST' } });
     }
-    return await createRazorpayOrder(amount);
+    return await createRazorpayOrderForAmount(amount);
   } catch (err) {
     logger.error(`createSubscriptionOrder error: ${err.message}`);
     throw err;
