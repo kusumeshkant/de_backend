@@ -55,34 +55,6 @@ const corsOptions = {
   credentials: false,
 };
 
-const ALLOWED_ORIGINS = [
-  // Production
-  'https://dqstore.in',
-  'https://app.dqstore.in',
-  'https://staff.dqstore.in',
-  'https://dq.dqstore.in',
-  // UAT
-  'https://uat-app.dqstore.in',
-  'https://uat-staff.dqstore.in',
-  'https://uat-admin.dqstore.in',
-  // DEV
-  'https://dev-app.dqstore.in',
-  'https://dev-staff.dqstore.in',
-  'https://dev-admin.dqstore.in',
-  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000', 'http://localhost:5000', 'http://localhost:8080'] : []),
-];
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS: origin '${origin}' is not allowed`));
-    }
-  },
-  credentials: false,
-};
-
 const startServer = async () => {
   if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
 

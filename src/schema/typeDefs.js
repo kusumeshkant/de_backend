@@ -367,8 +367,10 @@ const typeDefs = `#graphql
     # Register/refresh FCM token for push notifications (requires Firebase auth)
     updateFcmToken(token: String!): Boolean!
 
-    # Step 1: Create Razorpay order to initiate payment (requires Firebase auth)
-    createRazorpayOrder(amount: Float!): RazorpayOrder!
+    # Step 1: Create Razorpay order to initiate payment (requires Firebase auth).
+    # Server recomputes the total from live catalogue prices — the client never
+    # controls the payment amount.
+    createRazorpayOrder(storeId: ID!, items: [OrderItemInput!]!, discountCode: String): RazorpayOrder!
 
     # Step 2: Verify payment and save order in DB (requires Firebase auth)
     createOrder(

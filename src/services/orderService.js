@@ -4,6 +4,7 @@ const Store = require('../models/Store');
 const Product = require('../models/Product');
 const CartCheckEvent = require('../models/CartCheckEvent');
 const User = require('../models/User');
+const PendingPayment = require('../models/PendingPayment');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
 
@@ -12,13 +13,26 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     throw new ErrorHandler('Cart is empty', 400);
   }
 
+  // Verify payment amount via server-anchored PendingPayment record.
+  // PendingPayment was created by createRazorpayOrderFromCart with a
+  // server-computed price — the client never controlled this amount.
+  const pending = await PendingPayment.findOne({ razorpayOrderId });
+  if (!pending) {
+    throw new ErrorHandler('Payment session not found or expired. Please restart checkout.', 400);
+  }
+  if (pending.userId.toString() !== userId.toString()) {
+    throw new ErrorHandler('Payment session does not belong to this account.', 403);
+  }
+  const authorizedTotal = pending.serverTotal;
+  await PendingPayment.deleteOne({ razorpayOrderId });
+
   const order = new Order({
     user: userId,
     storeId,
     items,
     total,
     tax,
-    grandTotal,
+    grandTotal: authorizedTotal,  // server-computed, not client-supplied
     status: 'pending',
     razorpayOrderId,
     razorpayPaymentId,
@@ -59,7 +73,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     orderId: order._id,
     storeName: store?.name ?? null,
     itemCount: items.length,
-    grandTotal,
+    grandTotal: authorizedTotal,
   }).catch(() => {});
 
   return order;
