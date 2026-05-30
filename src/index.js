@@ -36,6 +36,10 @@ const ALLOWED_ORIGINS = [
   'https://uat-app.dqstore.in',
   'https://uat-staff.dqstore.in',
   'https://uat-admin.dqstore.in',
+  // UAT Cloudflare Pages preview URLs
+  'https://develop.dq-uat-admin.pages.dev',
+  'https://develop.dq-uat-staff.pages.dev',
+  'https://develop.dq-uat-app.pages.dev',
   // DEV
   'https://dev-app.dqstore.in',
   'https://dev-staff.dqstore.in',
