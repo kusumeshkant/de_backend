@@ -102,7 +102,7 @@ async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', 'null');
   }
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-correlation-id');
 
   if (req.method === 'OPTIONS') {
     res.status(204).end();
