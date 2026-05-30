@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 const typeDefs = require('../src/schema/typeDefs');
 const resolvers = require('../src/resolvers');
 const { verifyToken } = require('../src/middleware/auth');
+const User = require('../src/models/User');
 
 // ── Startup env validation ────────────────────────────────────────────────────
 // Non-fatal: logs missing vars and degrades gracefully.
@@ -68,7 +69,10 @@ const apolloHandler = startServerAndCreateNextHandler(server, {
   context: async (req) => {
     await connectDB();
     const user = await verifyToken(req);
-    return { user };
+    const dbUser = user
+      ? await User.findOne({ firebase_uid: user.uid }).lean() ?? null
+      : null;
+    return { user, dbUser };
   },
 });
 
