@@ -112,8 +112,13 @@ async function inviteStaff({ email, name, storeId, storeName }) {
       to: email,
       subject,
       html,
-    }).then(r => console.log(`[Invite] Email sent to ${email}:`, r.id))
-      .catch(err => console.error('[Invite] Email failed:', err.message));
+    }).then(({ data, error }) => {
+      if (error) {
+        console.error(`[Invite] Email FAILED to ${email}:`, error.message ?? JSON.stringify(error));
+      } else {
+        console.log(`[Invite] Email sent to ${email}: id=${data?.id}`);
+      }
+    }).catch(err => console.error('[Invite] Email exception:', err.message));
   } else {
     console.log(`[Invite] Resend not configured. Token for ${email}: ${token}`);
   }
