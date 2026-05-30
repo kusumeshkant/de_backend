@@ -42,3 +42,4 @@ pids/
 # Temporary files
 tmp/
 temp/
+.vercel
