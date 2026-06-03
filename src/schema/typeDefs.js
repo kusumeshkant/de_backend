@@ -170,8 +170,11 @@ const typeDefs = `#graphql
     # Returns onboarded stores sorted by distance from user's location
     nearbyStores(lat: Float!, lon: Float!): [Store!]!
 
-    # Get a single store
+    # Get a single store by ID
     store(id: ID!): Store
+
+    # Get a store by its store code — public, customer-accessible
+    getStoreByCode(code: String!): Store
 
     # Current user profile (requires Firebase auth)
     me: User

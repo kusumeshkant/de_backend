@@ -5,7 +5,7 @@ const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff,
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff, sendPermissionRequestNotification, sendPermissionStatusNotification } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, getProductsPaginated, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
-const { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated } = require('./services/storeService');
+const { getStores, getStoreById, getStoreByCode, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated } = require('./services/storeService');
 const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getOrdersPaginated, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
 const { createRazorpayOrderForAmount, createRazorpayOrderFromCart, verifyPayment } = require('./services/razorpayService');
 const { requestPermission, getPendingRequests, getAllRequests, getMyRequests, approveRequest, rejectRequest, revokePermission, getStaffPermissions, checkPermission } = require('./services/permissionService');
@@ -116,6 +116,18 @@ const resolvers = {
         return await getStoreById(id);
       } catch (error) {
         logger.error(`store error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    // Public: look up a store by its store code.
+    // Used by the customer app for manual code entry and QR scan.
+    // No auth required — store info is public (name, address, storeCode only).
+    getStoreByCode: async (_, { code }) => {
+      try {
+        return await getStoreByCode(code);
+      } catch (error) {
+        logger.error(`getStoreByCode error: ${error.message}`);
         throw error;
       }
     },

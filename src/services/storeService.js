@@ -71,9 +71,18 @@ async function _generateStoreCode(name) {
   return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
 }
 
+function _buildLocation(lat, lon) {
+  if (lat == null || lon == null) return undefined;
+  return { type: 'Point', coordinates: [lon, lat] }; // GeoJSON: [longitude, latitude]
+}
+
 async function createStore({ name, address, lat, lon, storeCode }, triggeredByUid = 'system') {
   const code  = storeCode?.trim().toUpperCase() || await _generateStoreCode(name);
-  const store = new Store({ name, storeCode: code, address, latitude: lat, longitude: lon });
+  const store = new Store({
+    name, storeCode: code, address,
+    latitude: lat, longitude: lon,
+    location: _buildLocation(lat, lon),
+  });
   await store.save();
 
   // Every new store starts on a trial plan automatically.
@@ -94,8 +103,16 @@ async function updateStore(id, { name, address, lat, lon, storeCode, isActive })
   const update = {};
   if (name !== undefined) update.name = name;
   if (address !== undefined) update.address = address;
-  if (lat !== undefined) update.latitude = lat;
-  if (lon !== undefined) update.longitude = lon;
+  if (lat !== undefined) { update.latitude = lat; }
+  if (lon !== undefined) { update.longitude = lon; }
+  // Keep GeoJSON location in sync with lat/lon whenever either changes
+  if (lat !== undefined || lon !== undefined) {
+    const existing = await Store.findById(id).select('latitude longitude').lean();
+    const newLat = lat ?? existing?.latitude;
+    const newLon = lon ?? existing?.longitude;
+    const loc = _buildLocation(newLat, newLon);
+    if (loc) update.location = loc;
+  }
   if (storeCode !== undefined) update.storeCode = storeCode.trim().toUpperCase();
   if (isActive !== undefined) update.isActive = isActive;
   return await Store.findByIdAndUpdate(id, update, { new: true });
@@ -147,4 +164,14 @@ async function getStoresPaginated({ first = 30, after = null, search = null, sto
   return { items: rows, meta: { hasNext, nextCursor, totalCount } };
 }
 
-module.exports = { getStores, getStoreById, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated };
+/**
+ * Public store lookup by store code.
+ * Customer-accessible — returns only active stores.
+ * Used by the customer app for manual code entry and QR scan.
+ */
+async function getStoreByCode(code) {
+  if (!code) return null;
+  return await Store.findOne({ storeCode: code.trim().toUpperCase(), isActive: true });
+}
+
+module.exports = { getStores, getStoreById, getStoreByCode, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated };
