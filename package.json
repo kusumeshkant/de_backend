@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@apollo/server": "^4.11.0",
-    "@as-integrations/next": "^4.1.0",
+    "@as-integrations/next": "^3.0.0",
     "applicationinsights": "^3.14.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
