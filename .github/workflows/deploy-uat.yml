@@ -4,6 +4,10 @@
 # or deploy-render-uat.yml (DEPLOY_PROVIDER=render).
 # This file is preserved so Azure UAT can be force-triggered manually at any
 # time regardless of the active DEPLOY_PROVIDER setting.
+#
+# STATUS 2026-07-16: the Azure subscription hosting rg-dq-prod is gone
+# (see deploy.yml). This workflow will fail until/unless Azure infra is
+# reprovisioned. DEPLOY_PROVIDER is currently set to 'render'.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Build and Deploy to Azure Container Apps (UAT) — Manual
 
