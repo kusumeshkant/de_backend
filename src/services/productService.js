@@ -121,7 +121,7 @@ async function getProductsPaginated(storeId, {
 }
 
 async function getProductByBarcode(barcode, storeId) {
-  return await Product.findOne({ barcode, storeId });
+  return await Product.findOne({ barcode, storeId, isAvailable: { $ne: false } });
 }
 
 async function getProducts() {

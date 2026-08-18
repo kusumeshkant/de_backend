@@ -7,6 +7,7 @@ const User = require('../models/User');
 const PendingPayment = require('../models/PendingPayment');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
+const logger = require('../utils/logger');
 
 async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
   if (!items || items.length === 0) {
@@ -50,16 +51,25 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     { sort: { createdAt: -1 } }
   ).catch(() => {});
 
-  // Decrement stock for each ordered item
+  // Atomically decrement stock for each ordered item.
+  // findOneAndUpdate with stock filter prevents overselling under concurrent orders.
+  // On zero stock, soft-delete (isAvailable:false) instead of hard-deleting the document,
+  // preserving the product record for audit trail and re-stock workflows.
   for (const item of items) {
-    const product = await Product.findOne({ barcode: item.barcode, storeId });
-    if (!product) continue;
-
-    const newStock = Math.max(0, product.stock - (item.quantity ?? 1));
-    if (newStock === 0) {
-      await Product.findByIdAndDelete(product._id);
-    } else {
-      await Product.findByIdAndUpdate(product._id, { stock: newStock });
+    const qty = item.quantity ?? 1;
+    const updated = await Product.findOneAndUpdate(
+      { barcode: item.barcode, storeId, stock: { $gte: qty } },
+      { $inc: { stock: -qty } },
+      { new: true }
+    );
+    if (!updated) {
+      // Stock was insufficient (concurrent order may have taken the last unit).
+      // Order proceeds — payment already succeeded; staff resolves the discrepancy.
+      logger.warn(`Stock insufficient during decrement: barcode=${item.barcode} storeId=${storeId} qty=${qty}`);
+      continue;
+    }
+    if (updated.stock <= 0) {
+      await Product.findByIdAndUpdate(updated._id, { isAvailable: false, stock: 0 });
     }
   }
 
@@ -153,6 +163,12 @@ async function updateOrderStatus(orderId, status, staffId, staffName) {
   if (status === 'completed') timestampUpdate.completedAt = new Date();
   if (status === 'cancelled') timestampUpdate.cancelledAt = new Date();
 
+  // For cancellation: capture previous status before updating, to guard against
+  // double-cancel double-restoring stock.
+  const prevOrder = status === 'cancelled'
+    ? await Order.findById(orderId).select('status storeId items')
+    : null;
+
   const order = await Order.findByIdAndUpdate(
     orderId,
     {
@@ -166,6 +182,20 @@ async function updateOrderStatus(orderId, status, staffId, staffName) {
   );
 
   if (!order) throw new Error('Order not found');
+
+  // Restore stock when cancelling (only if the order was not already cancelled).
+  // Uses $set: { isAvailable: true } to un-soft-delete any product zeroed by this order.
+  if (status === 'cancelled' && prevOrder && prevOrder.status !== 'cancelled') {
+    await Promise.all(
+      (order.items || []).map(item => {
+        const qty = item.quantity ?? 1;
+        return Product.findOneAndUpdate(
+          { barcode: item.barcode, storeId: order.storeId },
+          { $inc: { stock: qty }, $set: { isAvailable: true } }
+        ).catch(err => logger.warn(`Stock restore failed for barcode=${item.barcode}: ${err.message}`));
+      })
+    );
+  }
 
   const store = await Store.findById(order.storeId);
   order._storeName = store?.name ?? null;
