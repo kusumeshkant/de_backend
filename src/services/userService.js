@@ -44,6 +44,11 @@ async function getAllStaff(storeId = null) {
 
 /** Legacy single-role update — kept for updateUserRole mutation compatibility */
 async function updateUserRole(userId, role, storeId) {
+  // Defence in depth — the resolver already rejects this, but this service is
+  // also reachable from scripts. PLATFORM_ADMIN is operator-granted only.
+  if (RoleGroups.NON_SELF_ASSIGNABLE.includes(role)) {
+    throw new Error(`Refusing to assign non-self-assignable role '${role}' via updateUserRole`);
+  }
   const update = { $set: { roles: [role] } };
   if (storeId !== undefined) update.$set.storeId = storeId ?? null;
   return await User.findByIdAndUpdate(userId, update, { new: true });

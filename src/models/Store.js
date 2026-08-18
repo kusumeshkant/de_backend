@@ -17,6 +17,12 @@ const storeSchema = new mongoose.Schema({
   floor: { type: String },
   buildingId: { type: String },
   isActive: { type: Boolean, default: true },
+  // Firebase uid of the account that created this store.
+  // Used by upgradeToAdmin to verify that a store-less admin is claiming a store
+  // they actually created, rather than an arbitrary existing store by ID.
+  // Null on stores created before this field was introduced — upgradeToAdmin
+  // falls back to an "unclaimed" check for those.
+  createdBy: { type: String, default: null },
   created_at: { type: Date, default: Date.now },
 });
 

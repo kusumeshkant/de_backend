@@ -82,6 +82,7 @@ async function createStore({ name, address, lat, lon, storeCode }, triggeredByUi
     name, storeCode: code, address,
     latitude: lat, longitude: lon,
     location: _buildLocation(lat, lon),
+    createdBy: triggeredByUid && triggeredByUid !== 'system' ? triggeredByUid : null,
   });
   await store.save();
 
