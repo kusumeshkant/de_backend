@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "test": "jest",
     "seed": "node src/seed.js",
     "build:worker": "node build-worker.mjs",
     "deploy": "node build-worker.mjs && wrangler deploy",
@@ -29,6 +30,7 @@
     "winston": "^3.10.0"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.0.0"
   },
   "engines": {
