@@ -90,7 +90,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
 }
 
 async function getMyOrders(userId) {
-  const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
+  const orders = await Order.find({ user: userId }).sort({ createdAt: -1 }).limit(100);
 
   // Attach store names in one query
   const storeIds = [...new Set(orders.map((o) => o.storeId?.toString()).filter(Boolean))];
@@ -117,7 +117,7 @@ async function getOrderById(orderId, userId) {
 }
 
 async function getStoreOrders(storeId) {
-  const orders = await Order.find({ storeId }).sort({ createdAt: -1 });
+  const orders = await Order.find({ storeId }).sort({ createdAt: -1 }).limit(500);
 
   const store = await Store.findById(storeId);
   const storeName = store?.name ?? null;
@@ -254,7 +254,11 @@ async function getAllOrders({ storeId, status } = {}) {
 }
 
 async function getDashboardStats() {
-  const orders = await Order.find();
+  // Safety limit: load last 90 days of orders (max 5,000 rows).
+  // At scale this should be replaced with MongoDB aggregation pipelines
+  // to compute accurate lifetime totals without loading docs into memory.
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const orders = await Order.find({ createdAt: { $gte: ninetyDaysAgo } }).sort({ createdAt: -1 }).limit(5000);
   const stores = await Store.find();
 
   const totalRevenue = orders
@@ -341,7 +345,9 @@ async function getDashboardStats() {
 
 async function getStoreStats(storeId) {
   const store = await Store.findById(storeId);
-  const orders = await Order.find({ storeId }).sort({ createdAt: -1 });
+  // Safety limit: load most recent 1,000 orders. Totals are accurate up to 1,000 orders.
+  // Replace with aggregation pipeline (Phase 12) for correct lifetime stats at scale.
+  const orders = await Order.find({ storeId }).sort({ createdAt: -1 }).limit(1000);
 
   const totalRevenue = orders
     .filter((o) => o.status === 'completed')
@@ -370,8 +376,8 @@ async function getStoreAnalytics(storeId) {
   }
 
   const [completedOrders, allOrders] = await Promise.all([
-    Order.find(completedFilter),
-    Order.find(allFilter),
+    Order.find(completedFilter).limit(5000),
+    Order.find(allFilter).limit(5000),
   ]);
 
   const totalRevenue = completedOrders.reduce((s, o) => s + (o.grandTotal ?? 0), 0);
@@ -597,7 +603,7 @@ async function getStaffPerformance(storeId) {
   const filter = {};
   if (storeId) filter.storeId = storeId;
 
-  const orders = await Order.find(filter);
+  const orders = await Order.find(filter).limit(5000);
 
   // Build per-staff stats from staffActions audit trail
   const staffMap = {};
@@ -656,7 +662,7 @@ async function getCustomerRetention(storeId) {
   if (storeId) filter.storeId = storeId;
 
   // All orders sorted by user + createdAt
-  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 });
+  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 }).limit(5000);
 
   // Group orders by userId
   const userOrderMap = {};
@@ -725,7 +731,7 @@ async function getCustomerLTV(storeId) {
   const filter = { status: 'completed' };
   if (storeId) filter.storeId = storeId;
 
-  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 });
+  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 }).limit(5000);
 
   if (orders.length === 0) {
     return {

@@ -59,6 +59,33 @@ jest.mock('razorpay', () => {
 
 const { getMyOrders, getStoreOrders, updateOrderStatus } = require('../src/services/orderService');
 
+describe('orderService query limits', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('getMyOrders uses .limit(100)', async () => {
+    const mockLimit = jest.fn().mockResolvedValue([]);
+    const mockSort = jest.fn().mockReturnValue({ limit: mockLimit });
+    mockOrderFind.mockReturnValue({ sort: mockSort });
+
+    await getMyOrders('user-123').catch(() => {});
+
+    // Verify the chain ends with limit(100)
+    expect(mockLimit).toHaveBeenCalledWith(100);
+  });
+
+  it('getStoreOrders uses .limit(500)', async () => {
+    const mockLimit = jest.fn().mockResolvedValue([]);
+    const mockSort = jest.fn().mockReturnValue({ limit: mockLimit });
+    mockOrderFind.mockReturnValue({ sort: mockSort });
+
+    await getStoreOrders('store-123').catch(() => {});
+
+    expect(mockLimit).toHaveBeenCalledWith(500);
+  });
+});
+
 describe('atomic stock decrement logic', () => {
   it('uses findOneAndUpdate with $inc and stock guard — prevents race condition', async () => {
     // This test documents the required call signature for stock decrement.
