@@ -204,6 +204,57 @@ async function expireSubscription(storeId) {
 }
 
 /**
+ * Expiry sweep — finds subscriptions whose current period/grace period has
+ * lapsed and moves them to the next lifecycle state. Nothing previously called
+ * this; without it TRIAL/ACTIVE/GRANDFATHERED subscriptions never entered
+ * grace period and GRACE_PERIOD subscriptions never expired, so a lapsed
+ * store kept full access indefinitely. Safe to call repeatedly — each store
+ * transitions at most once per pass since the status check excludes stores
+ * already in the target state.
+ *
+ * Admin-override expiry is intentionally out of scope here: what plan an
+ * override should fall back to is a product decision, not an expiry-mechanics
+ * one, so ADMIN_OVERRIDE subscriptions are left for a human to resolve when
+ * overrideExpiresAt passes.
+ *
+ * @returns {Promise<{ enteredGracePeriod: string[], expired: string[], errors: Array<{storeId: string, error: string}> }>}
+ */
+async function checkSubscriptionExpirySweep() {
+  const now = new Date();
+  const result = { enteredGracePeriod: [], expired: [], errors: [] };
+
+  const periodLapsed = await StoreSubscription.find({
+    status: { $in: [SUBSCRIPTION_STATUS.TRIAL, SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.GRANDFATHERED] },
+    currentPeriodEnd: { $lt: now },
+  }).select('storeId').lean();
+
+  for (const { storeId } of periodLapsed) {
+    try {
+      await enterGracePeriod(storeId);
+      result.enteredGracePeriod.push(storeId.toString());
+    } catch (err) {
+      result.errors.push({ storeId: storeId.toString(), error: err.message });
+    }
+  }
+
+  const graceLapsed = await StoreSubscription.find({
+    status: SUBSCRIPTION_STATUS.GRACE_PERIOD,
+    gracePeriodEndsAt: { $lt: now },
+  }).select('storeId').lean();
+
+  for (const { storeId } of graceLapsed) {
+    try {
+      await expireSubscription(storeId);
+      result.expired.push(storeId.toString());
+    } catch (err) {
+      result.errors.push({ storeId: storeId.toString(), error: err.message });
+    }
+  }
+
+  return result;
+}
+
+/**
  * Sets an admin override — gives a store full access for N days regardless of plan.
  */
 async function setAdminOverride(storeId, { planName, days, overrideReason, triggeredBy, triggeredByRole }) {
@@ -287,6 +338,7 @@ module.exports = {
   cancelSubscription,
   enterGracePeriod,
   expireSubscription,
+  checkSubscriptionExpirySweep,
   setAdminOverride,
   setGrandfathered,
   getStoreSubscription,

@@ -468,6 +468,12 @@ const typeDefs = `#graphql
     # Subscription: admin override — grant a store elevated plan access for N days (requires admin auth)
     setAdminSubscriptionOverride(storeId: ID!, planName: String!, days: Int!, overrideReason: String): StoreSubscription!
 
+    # Subscription: expiry sweep — moves lapsed trial/active stores into grace period,
+    # and lapsed grace-period stores into expired. Restricted to platform admins
+    # (users with no storeId). Intended to be called by a scheduler (cron/Container
+    # App job/GitHub Actions), not by store-facing UI.
+    runSubscriptionExpirySweep: SubscriptionExpirySweepResult!
+
     # Subscription purchase — Step 1: create a Razorpay order for a plan upgrade (requires admin auth)
     createSubscriptionOrder(storeId: ID!, planName: String!, billingCycle: String!): RazorpayOrder!
 
@@ -685,6 +691,12 @@ const typeDefs = `#graphql
     isAdminOverride: Boolean!
     overrideExpiresAt: String
     usageCounters: UsageCounters!
+  }
+
+  type SubscriptionExpirySweepResult {
+    enteredGracePeriod: [ID!]!
+    expired: [ID!]!
+    errorCount: Int!
   }
 
   type PlanUsage {

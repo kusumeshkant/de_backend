@@ -1493,6 +1493,31 @@ resolvers.Mutation.setAdminSubscriptionOverride = async (_, { storeId, planName,
   }
 };
 
+resolvers.Mutation.runSubscriptionExpirySweep = async (_, __, context) => {
+  requireAuth(context);
+  try {
+    const user = requireDbUser(context);
+    requireRole(user, Roles.ADMIN);
+    // Platform-level operation — only DQ platform admins (no storeId) may call this.
+    if (user.storeId) {
+      throw new GraphQLError('This operation is restricted to platform administrators', {
+        extensions: { code: 'FORBIDDEN' },
+      });
+    }
+    const { checkSubscriptionExpirySweep } = require('./services/subscription_service');
+    const result = await checkSubscriptionExpirySweep();
+    logger.info(`Subscription expiry sweep: ${result.enteredGracePeriod.length} entered grace period, ${result.expired.length} expired, ${result.errors.length} errors`);
+    return {
+      enteredGracePeriod: result.enteredGracePeriod,
+      expired:            result.expired,
+      errorCount:         result.errors.length,
+    };
+  } catch (err) {
+    logger.error(`runSubscriptionExpirySweep error: ${err.message}`);
+    throw err;
+  }
+};
+
 resolvers.Mutation.createSubscriptionOrder = async (_, { storeId, planName, billingCycle }, context) => {
   requireAuth(context);
   try {
