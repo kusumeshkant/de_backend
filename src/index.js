@@ -36,6 +36,10 @@ const ALLOWED_ORIGINS = [
   'https://uat-app.dqstore.in',
   'https://uat-staff.dqstore.in',
   'https://uat-admin.dqstore.in',
+  // UAT Cloudflare Pages preview URLs
+  'https://develop.dq-uat-admin.pages.dev',
+  'https://develop.dq-uat-staff.pages.dev',
+  'https://develop.dq-uat-app.pages.dev',
   // DEV
   'https://dev-app.dqstore.in',
   'https://dev-staff.dqstore.in',
@@ -46,34 +50,6 @@ const ALLOWED_ORIGINS = [
 const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no Origin header (mobile apps, Postman, server-to-server)
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS: origin '${origin}' is not allowed`));
-    }
-  },
-  credentials: false,
-};
-
-const ALLOWED_ORIGINS = [
-  // Production
-  'https://dqstore.in',
-  'https://app.dqstore.in',
-  'https://staff.dqstore.in',
-  'https://dq.dqstore.in',
-  // UAT
-  'https://uat-app.dqstore.in',
-  'https://uat-staff.dqstore.in',
-  'https://uat-admin.dqstore.in',
-  // DEV
-  'https://dev-app.dqstore.in',
-  'https://dev-staff.dqstore.in',
-  'https://dev-admin.dqstore.in',
-  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000', 'http://localhost:5000', 'http://localhost:8080'] : []),
-];
-
-const corsOptions = {
-  origin: (origin, callback) => {
     if (!origin || ALLOWED_ORIGINS.includes(origin)) {
       callback(null, true);
     } else {
@@ -169,12 +145,43 @@ const startServer = async () => {
 
   // Connect to MongoDB in the background
   mongoose.connect(process.env.MONGO_URI)
-    .then(() => logger.info('Connected to MongoDB'))
+    .then(() => {
+      logger.info('Connected to MongoDB');
+      _startSubscriptionExpirySweep();
+    })
     .catch((err) => {
       logger.error(`MongoDB connection failed: ${err.message}`);
       process.exit(1);
     });
 };
+
+// ── Subscription expiry sweep ─────────────────────────────────────────────────
+// Only meaningful on a long-running process (this file — Azure Container Apps /
+// any always-on host). The Vercel serverless entry (api/graphql.js) has no
+// equivalent, since a stateless function can't hold a setInterval between
+// invocations; there the sweep must be triggered externally via the
+// runSubscriptionExpirySweep mutation (e.g. a scheduled GitHub Action or
+// platform cron hitting the GraphQL endpoint).
+const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function _startSubscriptionExpirySweep() {
+  if (process.env.SUBSCRIPTION_ENABLED === 'false') return;
+
+  const { checkSubscriptionExpirySweep } = require('./services/subscription_service');
+
+  const runSweep = () => {
+    checkSubscriptionExpirySweep()
+      .then((result) => {
+        if (result.enteredGracePeriod.length || result.expired.length || result.errors.length) {
+          logger.info(`Subscription expiry sweep: ${result.enteredGracePeriod.length} entered grace period, ${result.expired.length} expired, ${result.errors.length} errors`);
+        }
+      })
+      .catch((err) => logger.error(`Subscription expiry sweep failed: ${err.message}`));
+  };
+
+  runSweep(); // run once shortly after startup, then on the interval
+  setInterval(runSweep, SWEEP_INTERVAL_MS);
+}
 
 startServer().catch((err) => {
   logger.error(`Fatal error: ${err.message}`);

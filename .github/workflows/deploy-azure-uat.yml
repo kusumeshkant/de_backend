@@ -7,6 +7,12 @@
 #   Set DEPLOY_PROVIDER = render  (deploy-render-uat.yml runs instead)
 #
 # Branch strategy:  develop → UAT   |   main → Production (deploy.yml)
+#
+# STATUS 2026-07-16: DEPLOY_PROVIDER is currently 'render', so this job's
+# `if` guard already no-ops it. The underlying Azure subscription (rg-dq-prod)
+# no longer exists — this workflow will fail even if DEPLOY_PROVIDER is
+# switched back to 'azure' until infra is reprovisioned. Production has moved
+# to Vercel (de-backend-iota.vercel.app) — see deploy.yml and render.yaml.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Deploy UAT → Azure Container Apps
 

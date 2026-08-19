@@ -24,11 +24,29 @@ const Roles = Object.freeze({
   STAFF:       'staff',
   ADMIN:       'admin',
 
+  /**
+   * DQ platform operator — cross-store access.
+   *
+   * Held IN ADDITION to ADMIN, never instead of it, so every existing
+   * requireRole(user, Roles.ADMIN) guard keeps working unchanged.
+   *
+   * This role is the ONLY thing that grants platform-wide reach. It is never
+   * self-assignable: registerAdmin cannot produce it, no mutation grants it,
+   * and the only supported way to set it is scripts/grant_platform_admin.js
+   * run against the database by an operator.
+   *
+   * Historical note: before this role existed, `user.storeId == null` was
+   * treated as "unrestricted platform admin". Because registerAdmin creates
+   * exactly that state for any brand-new account, anyone who signed up and
+   * stopped before onboarding got cross-store access. Absence of a store is
+   * now treated as "not yet onboarded" (deny), not as privilege.
+   */
+  PLATFORM_ADMIN: 'platform_admin',
+
   // ── Future roles — uncomment and wire up when ready ──────────────────────
   // VENDOR:      'vendor',
   // DELIVERY:    'delivery',
   // FRANCHISE:   'franchise',
-  // SUPER_ADMIN: 'super_admin',
 });
 
 /**
@@ -76,6 +94,12 @@ const RoleGroups = Object.freeze({
 
   /** Roles that have elevated platform access */
   ELEVATED: [Roles.STAFF, Roles.ADMIN],
+
+  /**
+   * Roles that are NEVER self-assignable through the API.
+   * Guard any future role-granting mutation against this list.
+   */
+  NON_SELF_ASSIGNABLE: [Roles.PLATFORM_ADMIN],
 
   /** All defined roles — used for validation and DB enum */
   ALL: Object.values(Roles),

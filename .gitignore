@@ -34,6 +34,10 @@ dist/
 build/
 out/
 
+# Test coverage — jest.config.js sets collectCoverage:true, so every default
+# `npx jest` run regenerates this directory.
+coverage/
+
 # Runtime data
 pids/
 *.pid
@@ -42,3 +46,4 @@ pids/
 # Temporary files
 tmp/
 temp/
+.vercel

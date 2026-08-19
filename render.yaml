@@ -12,6 +12,13 @@
 # Region: Singapore (closest to India Central — matches Azure Central India)
 # Plan:   starter ($7/month) — always-on, no cold-start delays
 #         Free tier is supported but causes ~60s cold starts for health checks.
+#
+# STATUS 2026-07-16: PRODUCTION now runs on Vercel (de-backend-iota.vercel.app,
+# deployed via Vercel's own git integration, not GitHub Actions) — the Azure
+# subscription that hosted rg-dq-prod (both ca-dq-backend and ca-dq-uat) no
+# longer exists. This Render UAT service itself was also unreachable when last
+# checked (curl timeout) despite its last GitHub Actions deploy (2026-06-03)
+# succeeding — worth confirming its billing/suspension status separately.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:

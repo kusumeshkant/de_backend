@@ -44,6 +44,7 @@ async function _getSubscriptionContext(storeId) {
  * Exported so subscription_service can call it after any mutation.
  */
 function invalidateCache(storeId) {
+  if (storeId === null || storeId === undefined) return;
   _cache.delete(storeId.toString());
 }
 
@@ -84,7 +85,53 @@ function _isPeriodValid(sub) {
   return sub.currentPeriodEnd ? sub.currentPeriodEnd > now : false;
 }
 
+// ── Denial reasons ────────────────────────────────────────────────────────────
+//
+// A feature can be unavailable for four quite different reasons, and they need
+// different messages. Previously every denial said "your plan does not include
+// X", which is simply wrong when the plan *does* include X and the subscription
+// has merely lapsed — and outright misleading for bulkUpload, which every plan
+// grants, so a bulkUpload denial is *always* a subscription problem.
+const DENIAL = Object.freeze({
+  NO_SUBSCRIPTION: 'no_subscription', // no StoreSubscription record at all
+  NO_PLAN:         'no_plan',         // subscription exists but planId did not resolve
+  STATUS_LOCKED:   'status_locked',   // expired / cancelled past period
+  PERIOD_LAPSED:   'period_lapsed',   // status is fine but the date window has passed
+  NOT_IN_PLAN:     'not_in_plan',     // genuinely a higher-tier feature
+});
+
+/**
+ * Returns null when access is allowed, or a DENIAL reason when it is not.
+ * Single source of truth for both canUseFeature and assertFeatureAccess so the
+ * boolean answer and the error message can never disagree.
+ *
+ * Caller must have already handled the null-storeId and kill-switch cases.
+ */
+async function _evaluateAccess(storeId, featureKey) {
+  const ctx = await _getSubscriptionContext(storeId.toString());
+  if (!ctx) return DENIAL.NO_SUBSCRIPTION;
+
+  const { sub, plan } = ctx;
+  if (!_isAccessible(sub.status)) return DENIAL.STATUS_LOCKED;
+  if (!_isPeriodValid(sub))       return DENIAL.PERIOD_LAPSED;
+  if (!plan || !plan.features)    return DENIAL.NO_PLAN;
+
+  return plan.features[featureKey] === true ? null : DENIAL.NOT_IN_PLAN;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * True when *storeId* refers to platform-wide scope rather than one store.
+ *
+ * resolveStoreScope() in the resolvers returns null to mean "all stores", which
+ * only a PLATFORM_ADMIN can obtain. Such a caller is not operating under any one
+ * store's subscription, so per-store plan gating does not apply to them — and
+ * attempting to evaluate it crashed on null.toString() (F-BUG-1).
+ */
+function _isPlatformScope(storeId) {
+  return storeId === null || storeId === undefined;
+}
 
 /**
  * Returns true if the store can use the given feature.
@@ -95,22 +142,17 @@ function _isPeriodValid(sub) {
  *  3. The date window is valid.
  *  4. The plan's feature flag is true for this featureKey.
  *
- * @param {string} storeId
+ * A null/undefined storeId means platform-wide scope and is always allowed.
+ *
+ * @param {string|null} storeId
  * @param {string} featureKey  One of FEATURE_KEYS values
  * @returns {Promise<boolean>}
  */
 async function canUseFeature(storeId, featureKey) {
-  if (process.env.SUBSCRIPTION_ENABLED !== 'true') return true;
+  if (process.env.SUBSCRIPTION_ENABLED === 'false') return true;
+  if (_isPlatformScope(storeId)) return true;
 
-  const ctx = await _getSubscriptionContext(storeId.toString());
-  if (!ctx) return false;
-
-  const { sub, plan } = ctx;
-  if (!_isAccessible(sub.status)) return false;
-  if (!_isPeriodValid(sub)) return false;
-  if (!plan || !plan.features) return false;
-
-  return plan.features[featureKey] === true;
+  return (await _evaluateAccess(storeId, featureKey)) === null;
 }
 
 /**
@@ -122,22 +164,37 @@ async function canUseFeature(storeId, featureKey) {
  * @param {string} [featureName]  Human-readable name for the error message
  */
 async function assertFeatureAccess(storeId, featureKey, featureName) {
-  if (process.env.SUBSCRIPTION_ENABLED !== 'true') return;
+  if (process.env.SUBSCRIPTION_ENABLED === 'false') return;
 
-  const allowed = await canUseFeature(storeId, featureKey);
-  if (!allowed) {
-    const label = featureName || featureKey;
-    throw new GraphQLError(
-      `Your current plan does not include ${label}. Please upgrade to access this feature.`,
-      {
-        extensions: {
-          code:       'FEATURE_GATED',
-          featureKey,
-          storeId:    storeId.toString(),
-        },
-      }
-    );
-  }
+  // Platform-wide scope (PLATFORM_ADMIN reading across stores) — not bound to
+  // any single store's plan, so the gate does not apply. Bypassing is correct
+  // here rather than picking some arbitrary store's plan to check against.
+  if (_isPlatformScope(storeId)) return;
+
+  const reason = await _evaluateAccess(storeId, featureKey);
+  if (reason === null) return;
+
+  const label = featureName || featureKey;
+
+  // Message must match the actual cause. A lapsed subscription is not the same
+  // problem as an insufficient plan, and telling someone to upgrade a plan that
+  // already includes the feature is worse than saying nothing.
+  const message =
+    reason === DENIAL.NOT_IN_PLAN
+      ? `Your current plan does not include ${label}. Please upgrade to access this feature.`
+      : reason === DENIAL.PERIOD_LAPSED || reason === DENIAL.STATUS_LOCKED
+        ? `Your subscription has lapsed, so ${label} is currently unavailable. Please renew to restore access.`
+        : `No active subscription was found for this store, so ${label} is unavailable. Please contact support.`;
+
+  throw new GraphQLError(message, {
+    extensions: {
+      code:       'FEATURE_GATED',
+      featureKey,
+      // Lets a client distinguish "upgrade" from "renew" without parsing prose.
+      reason,
+      storeId:    storeId.toString(),
+    },
+  });
 }
 
 /**
@@ -153,7 +210,8 @@ async function getFeatureAccessMap(storeId) {
     map[key] = false;
   }
 
-  if (process.env.SUBSCRIPTION_ENABLED !== 'true') {
+  // Kill switch, or platform-wide scope — everything unlocked either way.
+  if (process.env.SUBSCRIPTION_ENABLED === 'false' || _isPlatformScope(storeId)) {
     for (const key of Object.values(FEATURE_KEYS)) map[key] = true;
     return map;
   }
@@ -177,6 +235,7 @@ async function getFeatureAccessMap(storeId) {
  * Returns the subscription status string for a store, or 'none' if not found.
  */
 async function getSubscriptionStatus(storeId) {
+  if (_isPlatformScope(storeId)) return 'none';
   const ctx = await _getSubscriptionContext(storeId.toString());
   if (!ctx) return 'none';
   return ctx.sub.status;

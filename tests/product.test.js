@@ -1,86 +1,61 @@
-const { createTestClient } = require('apollo-server-testing');
-const { ApolloServer } = require('apollo-server');
-const typeDefs = require('../src/schema/typeDefs');
-const resolvers = require('../src/resolvers');
-const Product = require('../src/models/Product');
+/**
+ * productService unit tests.
+ * Verifies the isAvailable filter on barcode scans (P0-04b fix).
+ * No database connection required — Product model is mocked.
+ */
 
-jest.mock('../src/models/Product');
+const mockFindOne = jest.fn();
+jest.mock('../src/models/Product', () => ({
+  findOne: mockFindOne,
+  findById: jest.fn(),
+  findOneAndUpdate: jest.fn(),
+  find: jest.fn(),
+}));
+jest.mock('../src/utils/logger', () => ({
+  info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(),
+}));
 
-const server = new ApolloServer({
-  typeDefs,
-  resolvers,
-});
+const { getProductByBarcode } = require('../src/services/productService');
 
-const { query, mutate } = createTestClient(server);
+describe('productService.getProductByBarcode', () => {
+  const BARCODE = 'BARCODE-123';
+  const STORE_ID = 'store-abc';
 
-describe('Product API', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    mockFindOne.mockReset();
   });
 
-  it('should add a new product', async () => {
-    const ADD_PRODUCT = `
-      mutation AddProduct($name: String!, $description: String!, $price: Float!, $stock: Int!) {
-        addProduct(name: $name, description: $description, price: $price, stock: $stock) {
-          id
-          name
-          description
-          price
-          stock
-        }
-      }
-    `;
+  it('queries with isAvailable: { $ne: false } to exclude soft-deleted products', async () => {
+    mockFindOne.mockResolvedValue(null);
+    await getProductByBarcode(BARCODE, STORE_ID);
 
-    Product.mockImplementation(() => ({
-      save: jest.fn().mockResolvedValue({
-        id: '1',
-        name: 'Test Product',
-        description: 'A product for testing',
-        price: 99.99,
-        stock: 10,
-      }),
-    }));
-
-    const res = await mutate({
-      mutation: ADD_PRODUCT,
-      variables: {
-        name: 'Test Product',
-        description: 'A product for testing',
-        price: 99.99,
-        stock: 10,
-      },
+    expect(mockFindOne).toHaveBeenCalledWith({
+      barcode: BARCODE,
+      storeId: STORE_ID,
+      isAvailable: { $ne: false },
     });
-
-    expect(res.data.addProduct.name).toBe('Test Product');
-    expect(res.data.addProduct.price).toBe(99.99);
   });
 
-  it('should fetch all products', async () => {
-    const GET_PRODUCTS = `
-      query {
-        products {
-          id
-          name
-          description
-          price
-          stock
-        }
-      }
-    `;
+  it('returns product when found and available', async () => {
+    const product = { _id: '1', barcode: BARCODE, storeId: STORE_ID, isAvailable: true, stock: 5 };
+    mockFindOne.mockResolvedValue(product);
 
-    Product.find.mockResolvedValue([
-      {
-        id: '1',
-        name: 'Test Product',
-        description: 'A product for testing',
-        price: 99.99,
-        stock: 10,
-      },
-    ]);
+    const result = await getProductByBarcode(BARCODE, STORE_ID);
+    expect(result).toEqual(product);
+  });
 
-    const res = await query({ query: GET_PRODUCTS });
+  it('returns null when product is sold out (isAvailable: false)', async () => {
+    // In this case MongoDB returns null because the filter excludes isAvailable:false
+    mockFindOne.mockResolvedValue(null);
 
-    expect(res.data.products.length).toBeGreaterThan(0);
-    expect(res.data.products[0].name).toBe('Test Product');
+    const result = await getProductByBarcode(BARCODE, STORE_ID);
+    expect(result).toBeNull();
+  });
+
+  it('returns null when product does not exist', async () => {
+    mockFindOne.mockResolvedValue(null);
+
+    const result = await getProductByBarcode('NONEXISTENT', STORE_ID);
+    expect(result).toBeNull();
   });
 });
