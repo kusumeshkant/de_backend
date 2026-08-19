@@ -1,6 +1,6 @@
 ﻿const { GraphQLError } = require('graphql');
 const { Roles, AppId, RoleHint, RoleGroups } = require('./constants/roles');
-const { PLAN_LIMITS } = require('./constants/feature_keys');
+const { PLAN_LIMITS, FEATURE_KEYS } = require('./constants/feature_keys');
 const { getOrCreateUser, getProfile, updateProfile, updateFcmToken, getAllStaff, getStaffPaginated, updateUserRole, upgradeToAdmin, getUserByEmail, ensureCustomerRole } = require('./services/userService');
 const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStoreStaff, removeStaff, getPendingInvites, cancelInvite } = require('./services/inviteService');
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff, sendPermissionRequestNotification, sendPermissionStatusNotification } = require('./services/notificationService_cf');
@@ -19,7 +19,7 @@ const {
   cancelSubscription,
   setAdminOverride,
 } = require('./services/subscription_service');
-const { getFeatureAccessMap } = require('./services/feature_access_service');
+const { getFeatureAccessMap, assertFeatureAccess } = require('./services/feature_access_service');
 const { getRemainingUsage, assertLimitNotReached, refreshUsageCounters } = require('./services/plan_limit_service');
 const logger = require('./utils/logger_cf');
 
@@ -539,6 +539,7 @@ const resolvers = {
         const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = resolveStoreScope(user, storeId);
+        await assertFeatureAccess(effectiveStoreId, FEATURE_KEYS.CUSTOMER_LTV_ANALYTICS, 'Customer LTV Analytics');
         return await getCustomerLTV(effectiveStoreId);
       } catch (error) {
         logger.error(`customerLTV error: ${error.message}`);
@@ -565,6 +566,7 @@ const resolvers = {
         const user = requireDbUser(context);
         requireRole(user, Roles.ADMIN);
         const effectiveStoreId = resolveStoreScope(user, storeId);
+        await assertFeatureAccess(effectiveStoreId, FEATURE_KEYS.STAFF_PERFORMANCE_ANALYTICS, 'Staff Performance Analytics');
         return await getStaffPerformance(effectiveStoreId);
       } catch (error) {
         logger.error(`staffPerformance error: ${error.message}`);
@@ -1175,6 +1177,7 @@ const resolvers = {
           }
         }
         const targetStoreId = requireTargetStore(user, storeId);
+        await assertFeatureAccess(targetStoreId, FEATURE_KEYS.BULK_UPLOAD, 'Bulk Upload');
         return await bulkUpsertProducts(targetStoreId, products, {
           fileName,
           totalRows,
@@ -1257,6 +1260,7 @@ const resolvers = {
         const user = requireDbUser(context);
         requireRole(user, Roles.STAFF);
         requireStoreOwnership(user, storeId);
+        await assertFeatureAccess(storeId, FEATURE_KEYS.COUPONS, 'Coupons & Discounts');
         return await generateDiscountCode({ staffId: user._id, staffName: user.name || 'Staff', storeId, discountPercent });
       } catch (error) {
         logger.error(`generateDiscountCode error: ${error.message}`);
