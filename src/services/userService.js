@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { GraphQLError } = require('graphql');
 const User = require('../models/User');
 const { Roles, RoleGroups } = require('../constants/roles');
+const logger = require('../utils/logger_cf');
 
 /**
  * Canonical form for an email before storing or looking one up.
@@ -48,6 +49,14 @@ async function getOrCreateUser({ uid, phone, email }) {
       firebase_uid: { $ne: uid },
     });
     if (existingByEmail) {
+      // The other account's identifiers go to the server log for the operator,
+      // never to the client: this error is returned to whoever attempted the
+      // signup. If the existing uid no longer resolves in Firebase, that record
+      // is an orphan and needs cleanup, not a merge.
+      logger.warn(
+        `EMAIL_ALREADY_LINKED: existingUserId=${existingByEmail._id.toString()} ` +
+        `existingFirebaseUid=${existingByEmail.firebase_uid} attemptedFirebaseUid=${uid}`
+      );
       throw new GraphQLError(
         'This email is already linked to another account. ' +
         'Please contact support so the existing account can be recovered.',
@@ -55,10 +64,6 @@ async function getOrCreateUser({ uid, phone, email }) {
           extensions: {
             code: 'EMAIL_ALREADY_LINKED',
             email: normalizedEmail,
-            existingUserId: existingByEmail._id.toString(),
-            // The uid on the existing record. If it no longer resolves in
-            // Firebase, that record is an orphan and needs cleanup, not a merge.
-            existingFirebaseUid: existingByEmail.firebase_uid,
             attemptedFirebaseUid: uid,
           },
         }

@@ -47,7 +47,7 @@ jest.mock('../src/models/DiscountLog', () => ({
   find: jest.fn().mockReturnValue({ sort: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }),
 }));
 jest.mock('../src/models/StaffInvite', () => ({ findOne: jest.fn() }));
-jest.mock('../src/utils/logger', () => ({
+jest.mock('../src/utils/logger_cf', () => ({
   info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(),
 }));
 jest.mock('razorpay', () => {

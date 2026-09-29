@@ -118,7 +118,7 @@ describe('getOrCreateUser — email already held by a different uid', () => {
     expect(mockSave).not.toHaveBeenCalled();
   });
 
-  it('carries diagnostic detail for the operator', async () => {
+  it('never exposes the other account\'s identifiers to the caller', async () => {
     mockFindOne.mockResolvedValueOnce(null).mockResolvedValueOnce(EXISTING);
     try {
       await getOrCreateUser({ uid: 'NEW-uid', email: 'someone@example.com' });
@@ -126,10 +126,26 @@ describe('getOrCreateUser — email already held by a different uid', () => {
     } catch (err) {
       expect(err.extensions.code).toBe('EMAIL_ALREADY_LINKED');
       expect(err.extensions.email).toBe('someone@example.com');
-      expect(err.extensions.existingUserId).toBe('existing-mongo-id');
-      expect(err.extensions.existingFirebaseUid).toBe('OLD-uid-deleted-from-firebase');
       expect(err.extensions.attemptedFirebaseUid).toBe('NEW-uid');
+      expect(err.extensions).not.toHaveProperty('existingUserId');
+      expect(err.extensions).not.toHaveProperty('existingFirebaseUid');
+      // Nothing in the client-facing payload may carry the other account's ids.
+      const payload = JSON.stringify({ message: err.message, extensions: err.extensions });
+      expect(payload).not.toContain('existing-mongo-id');
+      expect(payload).not.toContain('OLD-uid-deleted-from-firebase');
     }
+  });
+
+  it('keeps the diagnostic detail for the operator in the server log', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFindOne.mockResolvedValueOnce(null).mockResolvedValueOnce(EXISTING);
+    await expect(
+      getOrCreateUser({ uid: 'NEW-uid', email: 'someone@example.com' })
+    ).rejects.toThrow('already linked');
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(logged).toContain('existingUserId=existing-mongo-id');
+    expect(logged).toContain('existingFirebaseUid=OLD-uid-deleted-from-firebase');
+    warn.mockRestore();
   });
 
   it('treats a case variant of the same email as the same account', async () => {

@@ -7,7 +7,7 @@ const User = require('../models/User');
 const PendingPayment = require('../models/PendingPayment');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
-const logger = require('../utils/logger');
+const logger = require('../utils/logger_cf');
 
 async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
   if (!items || items.length === 0) {
