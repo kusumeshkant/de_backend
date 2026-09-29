@@ -1,8 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DISABLED 2026-07-16 — Azure subscription hosting rg-dq-prod / ca-dq-backend
+# no longer exists (DNS NXDOMAIN on the Container App hostname, `az group show`
+# returns SubscriptionNotFound, last successful deploy was 2026-05-09, the two
+# attempts since then both failed at `npm install`). Production now runs on
+# Vercel (de-backend-iota.vercel.app, deployed via Vercel's own git integration —
+# not this workflow). Trigger changed to manual-only so this stops failing
+# silently on every push to main. Re-enable the push trigger only if Azure
+# infra is provisioned again.
+# ─────────────────────────────────────────────────────────────────────────────
 name: Build and Deploy to Azure Container Apps
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io

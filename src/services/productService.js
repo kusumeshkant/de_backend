@@ -121,7 +121,7 @@ async function getProductsPaginated(storeId, {
 }
 
 async function getProductByBarcode(barcode, storeId) {
-  return await Product.findOne({ barcode, storeId });
+  return await Product.findOne({ barcode, storeId, isAvailable: { $ne: false } });
 }
 
 async function getProducts() {
@@ -135,7 +135,7 @@ async function getStoreProducts(storeId) {
 }
 
 async function createProduct({ storeId, barcode, sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel }) {
-  const product = new Product({
+  const fields = {
     storeId,
     barcode,
     sku: sku || undefined,
@@ -150,8 +150,33 @@ async function createProduct({ storeId, barcode, sku, name, description, brand, 
     price,
     stock: stock ?? 0,
     reorderLevel: reorderLevel ?? 5,
-  });
-  return await product.save();
+  };
+  const revived = await _reviveSoftDeleted(fields);
+  if (revived) return revived;
+  return await new Product(fields).save();
+}
+
+// Optional fields a fresh create may leave unset — a revive clears any stale value.
+const REVIVE_CLEARED_FIELDS = ['sku', 'description', 'brand', 'gender', 'color', 'imageUrl'];
+
+// A barcode soft-deleted at zero stock still holds the {barcode, storeId} unique
+// index, so re-creating it would fail with E11000. Revive that record instead,
+// reset to exactly what a fresh create would store (only _id and createdAt
+// survive). An available product with the same barcode still fails as before.
+async function _reviveSoftDeleted(fields) {
+  const $set = { isAvailable: true };
+  const $unset = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) $set[key] = value;
+  }
+  for (const key of REVIVE_CLEARED_FIELDS) {
+    if (fields[key] === undefined) $unset[key] = '';
+  }
+  return await Product.findOneAndUpdate(
+    { barcode: fields.barcode, storeId: fields.storeId, isAvailable: false },
+    Object.keys($unset).length ? { $set, $unset } : { $set },
+    { new: true, runValidators: true }
+  );
 }
 
 async function updateProduct(id, { sku, name, description, brand, gender, color, categoryMain, categorySub, sizeGarment, sizeActual, mrp, price, stock, reorderLevel, isAvailable }) {
@@ -172,9 +197,14 @@ async function updateProduct(id, { sku, name, description, brand, gender, color,
   if (reorderLevel !== undefined)  update.reorderLevel = reorderLevel;
   if (isAvailable !== undefined)   update.isAvailable = isAvailable;
 
-  // If stock is being set to 0, delete the product and return last state
+  // Stock decides availability, matching the order path (createOrder soft-deletes
+  // at zero, cancelling restores). Zero hides the product from productByBarcode
+  // but keeps the record for audit and restock; any positive stock re-lists it.
+  // Stock wins over an isAvailable sent in the same call.
   if (stock === 0) {
-    return await Product.findByIdAndDelete(id);
+    update.isAvailable = false;
+  } else if (typeof stock === 'number' && stock > 0) {
+    update.isAvailable = true;
   }
   return await Product.findByIdAndUpdate(id, update, { new: true });
 }
@@ -221,6 +251,8 @@ async function bulkUpsertProducts(storeId, products, { fileName, totalRows, tota
         stock: p.stock ?? 0,
       };
       if (p.sku) update.sku = p.sku;
+      // A restock re-lists a product that was soft-deleted at zero stock.
+      if (update.stock > 0) update.isAvailable = true;
       Object.keys(update).forEach(k => update[k] === undefined && delete update[k]);
       return {
         updateOne: {

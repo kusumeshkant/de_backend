@@ -53,4 +53,11 @@ const orderSchema = new mongoose.Schema({
   cancelledAt: { type: Date, default: null },
 });
 
+// storeOrders sorted by time — every staff dashboard query hits this
+orderSchema.index({ storeId: 1, createdAt: -1 });
+// filter by status within a store — used for order queue views
+orderSchema.index({ storeId: 1, status: 1 });
+// customer order history — used by getMyOrders
+orderSchema.index({ user: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Order', orderSchema);

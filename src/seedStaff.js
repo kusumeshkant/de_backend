@@ -119,7 +119,6 @@ async function main() {
   console.log('═══════════════════════════════════════════════════════════');
   credentials.forEach((c) => {
     console.log(`  ${c.storeCode.padEnd(8)}  ${c.store.padEnd(12)}  ${c.email}`);
-    console.log(`           Password: ${c.password}`);
     console.log();
   });
   console.log('═══════════════════════════════════════════════════════════');
