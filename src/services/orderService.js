@@ -4,13 +4,28 @@ const Store = require('../models/Store');
 const Product = require('../models/Product');
 const CartCheckEvent = require('../models/CartCheckEvent');
 const User = require('../models/User');
+const PendingPayment = require('../models/PendingPayment');
 const { ErrorHandler } = require('../utils/errorHandler');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
+const logger = require('../utils/logger');
 
 async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
   if (!items || items.length === 0) {
     throw new ErrorHandler('Cart is empty', 400);
   }
+
+  // Verify payment amount via server-anchored PendingPayment record.
+  // PendingPayment was created by createRazorpayOrderFromCart with a
+  // server-computed price — the client never controlled this amount.
+  const pending = await PendingPayment.findOne({ razorpayOrderId });
+  if (!pending) {
+    throw new ErrorHandler('Payment session not found or expired. Please restart checkout.', 400);
+  }
+  if (pending.userId.toString() !== userId.toString()) {
+    throw new ErrorHandler('Payment session does not belong to this account.', 403);
+  }
+  const authorizedTotal = pending.serverTotal;
+  await PendingPayment.deleteOne({ razorpayOrderId });
 
   const order = new Order({
     user: userId,
@@ -18,7 +33,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     items,
     total,
     tax,
-    grandTotal,
+    grandTotal: authorizedTotal,  // server-computed, not client-supplied
     status: 'pending',
     razorpayOrderId,
     razorpayPaymentId,
@@ -36,16 +51,25 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     { sort: { createdAt: -1 } }
   ).catch(() => {});
 
-  // Decrement stock for each ordered item
+  // Atomically decrement stock for each ordered item.
+  // findOneAndUpdate with stock filter prevents overselling under concurrent orders.
+  // On zero stock, soft-delete (isAvailable:false) instead of hard-deleting the document,
+  // preserving the product record for audit trail and re-stock workflows.
   for (const item of items) {
-    const product = await Product.findOne({ barcode: item.barcode, storeId });
-    if (!product) continue;
-
-    const newStock = Math.max(0, product.stock - (item.quantity ?? 1));
-    if (newStock === 0) {
-      await Product.findByIdAndDelete(product._id);
-    } else {
-      await Product.findByIdAndUpdate(product._id, { stock: newStock });
+    const qty = item.quantity ?? 1;
+    const updated = await Product.findOneAndUpdate(
+      { barcode: item.barcode, storeId, stock: { $gte: qty } },
+      { $inc: { stock: -qty } },
+      { new: true }
+    );
+    if (!updated) {
+      // Stock was insufficient (concurrent order may have taken the last unit).
+      // Order proceeds — payment already succeeded; staff resolves the discrepancy.
+      logger.warn(`Stock insufficient during decrement: barcode=${item.barcode} storeId=${storeId} qty=${qty}`);
+      continue;
+    }
+    if (updated.stock <= 0) {
+      await Product.findByIdAndUpdate(updated._id, { isAvailable: false, stock: 0 });
     }
   }
 
@@ -59,14 +83,14 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     orderId: order._id,
     storeName: store?.name ?? null,
     itemCount: items.length,
-    grandTotal,
+    grandTotal: authorizedTotal,
   }).catch(() => {});
 
   return order;
 }
 
 async function getMyOrders(userId) {
-  const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
+  const orders = await Order.find({ user: userId }).sort({ createdAt: -1 }).limit(100);
 
   // Attach store names in one query
   const storeIds = [...new Set(orders.map((o) => o.storeId?.toString()).filter(Boolean))];
@@ -93,7 +117,7 @@ async function getOrderById(orderId, userId) {
 }
 
 async function getStoreOrders(storeId) {
-  const orders = await Order.find({ storeId }).sort({ createdAt: -1 });
+  const orders = await Order.find({ storeId }).sort({ createdAt: -1 }).limit(500);
 
   const store = await Store.findById(storeId);
   const storeName = store?.name ?? null;
@@ -139,6 +163,12 @@ async function updateOrderStatus(orderId, status, staffId, staffName) {
   if (status === 'completed') timestampUpdate.completedAt = new Date();
   if (status === 'cancelled') timestampUpdate.cancelledAt = new Date();
 
+  // For cancellation: capture previous status before updating, to guard against
+  // double-cancel double-restoring stock.
+  const prevOrder = status === 'cancelled'
+    ? await Order.findById(orderId).select('status storeId items')
+    : null;
+
   const order = await Order.findByIdAndUpdate(
     orderId,
     {
@@ -152,6 +182,20 @@ async function updateOrderStatus(orderId, status, staffId, staffName) {
   );
 
   if (!order) throw new Error('Order not found');
+
+  // Restore stock when cancelling (only if the order was not already cancelled).
+  // Uses $set: { isAvailable: true } to un-soft-delete any product zeroed by this order.
+  if (status === 'cancelled' && prevOrder && prevOrder.status !== 'cancelled') {
+    await Promise.all(
+      (order.items || []).map(item => {
+        const qty = item.quantity ?? 1;
+        return Product.findOneAndUpdate(
+          { barcode: item.barcode, storeId: order.storeId },
+          { $inc: { stock: qty }, $set: { isAvailable: true } }
+        ).catch(err => logger.warn(`Stock restore failed for barcode=${item.barcode}: ${err.message}`));
+      })
+    );
+  }
 
   const store = await Store.findById(order.storeId);
   order._storeName = store?.name ?? null;
@@ -210,7 +254,11 @@ async function getAllOrders({ storeId, status } = {}) {
 }
 
 async function getDashboardStats() {
-  const orders = await Order.find();
+  // Safety limit: load last 90 days of orders (max 5,000 rows).
+  // At scale this should be replaced with MongoDB aggregation pipelines
+  // to compute accurate lifetime totals without loading docs into memory.
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const orders = await Order.find({ createdAt: { $gte: ninetyDaysAgo } }).sort({ createdAt: -1 }).limit(5000);
   const stores = await Store.find();
 
   const totalRevenue = orders
@@ -297,7 +345,9 @@ async function getDashboardStats() {
 
 async function getStoreStats(storeId) {
   const store = await Store.findById(storeId);
-  const orders = await Order.find({ storeId }).sort({ createdAt: -1 });
+  // Safety limit: load most recent 1,000 orders. Totals are accurate up to 1,000 orders.
+  // Replace with aggregation pipeline (Phase 12) for correct lifetime stats at scale.
+  const orders = await Order.find({ storeId }).sort({ createdAt: -1 }).limit(1000);
 
   const totalRevenue = orders
     .filter((o) => o.status === 'completed')
@@ -326,8 +376,8 @@ async function getStoreAnalytics(storeId) {
   }
 
   const [completedOrders, allOrders] = await Promise.all([
-    Order.find(completedFilter),
-    Order.find(allFilter),
+    Order.find(completedFilter).limit(5000),
+    Order.find(allFilter).limit(5000),
   ]);
 
   const totalRevenue = completedOrders.reduce((s, o) => s + (o.grandTotal ?? 0), 0);
@@ -553,7 +603,7 @@ async function getStaffPerformance(storeId) {
   const filter = {};
   if (storeId) filter.storeId = storeId;
 
-  const orders = await Order.find(filter);
+  const orders = await Order.find(filter).limit(5000);
 
   // Build per-staff stats from staffActions audit trail
   const staffMap = {};
@@ -612,7 +662,7 @@ async function getCustomerRetention(storeId) {
   if (storeId) filter.storeId = storeId;
 
   // All orders sorted by user + createdAt
-  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 });
+  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 }).limit(5000);
 
   // Group orders by userId
   const userOrderMap = {};
@@ -681,7 +731,7 @@ async function getCustomerLTV(storeId) {
   const filter = { status: 'completed' };
   if (storeId) filter.storeId = storeId;
 
-  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 });
+  const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 }).limit(5000);
 
   if (orders.length === 0) {
     return {

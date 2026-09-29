@@ -103,17 +103,26 @@ async function inviteStaff({ email, name, storeId, storeName }) {
 
   const invite = await StaffInvite.create({ email, name, storeId, storeName, token, expiresAt });
 
-  // Send via Resend (fire-and-forget)
+  // Send via Resend — must be awaited in serverless (Vercel kills the process
+  // immediately after the response is sent, so fire-and-forget never completes).
   if (process.env.RESEND_API_KEY) {
-    const resend = getResend();
-    const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
-    resend.emails.send({
-      from: 'DQ Store <noreply@dqstore.in>',
-      to: email,
-      subject,
-      html,
-    }).then(r => console.log(`[Invite] Email sent to ${email}:`, r.id))
-      .catch(err => console.error('[Invite] Email failed:', err.message));
+    try {
+      const resend = getResend();
+      const { subject, html } = buildInviteEmail({ name, storeName, token, expiresAt });
+      const { data, error } = await resend.emails.send({
+        from: 'DQ Store <noreply@dqstore.in>',
+        to: email,
+        subject,
+        html,
+      });
+      if (error) {
+        console.error(`[Invite] Email FAILED to ${email}:`, error.message ?? JSON.stringify(error));
+      } else {
+        console.log(`[Invite] Email sent to ${email}: id=${data?.id}`);
+      }
+    } catch (err) {
+      console.error('[Invite] Email exception:', err.message);
+    }
   } else {
     console.log(`[Invite] Resend not configured. Token for ${email}: ${token}`);
   }
