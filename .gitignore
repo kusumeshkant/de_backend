@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json is committed so every Vercel build installs the exact
+# dependency tree that was tested, instead of re-resolving semver ranges.
 yarn.lock
 
 # Environment variables
