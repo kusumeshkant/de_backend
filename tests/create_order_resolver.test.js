@@ -97,6 +97,48 @@ describe('signature verification happens before anything else', () => {
   });
 });
 
+describe('verifyPayment — constant-time comparison, never throws', () => {
+  const { verifyPayment } = require('../src/services/razorpayService');
+  const crypto = require('crypto');
+
+  it('accepts the valid signature', () => {
+    expect(verifyPayment('rzp_A', 'pay_A', sign('rzp_A', 'pay_A'))).toBe(true);
+  });
+
+  it('rejects an invalid signature of the correct length', () => {
+    const good = sign('rzp_A', 'pay_A');
+    const flipped = (good[0] === 'a' ? 'b' : 'a') + good.slice(1);
+    expect(verifyPayment('rzp_A', 'pay_A', flipped)).toBe(false);
+  });
+
+  it.each([
+    ['too short', (s) => s.slice(0, 10)],
+    ['too long', (s) => s + '00'],
+    ['empty', () => ''],
+    ['multi-byte characters (byte length differs)', (s) => 'é'.repeat(s.length)],
+  ])('rejects a %s signature without throwing', (_label, mutate) => {
+    expect(() => verifyPayment('rzp_A', 'pay_A', mutate(sign('rzp_A', 'pay_A')))).not.toThrow();
+    expect(verifyPayment('rzp_A', 'pay_A', mutate(sign('rzp_A', 'pay_A')))).toBe(false);
+  });
+
+  it.each([[undefined], [null], [12345], [{}]])('rejects a non-string signature %p without throwing', (bad) => {
+    expect(verifyPayment('rzp_A', 'pay_A', bad)).toBe(false);
+  });
+
+  it('uses crypto.timingSafeEqual for the comparison', () => {
+    const spy = jest.spyOn(crypto, 'timingSafeEqual');
+    verifyPayment('rzp_A', 'pay_A', sign('rzp_A', 'pay_A'));
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it('a wrong-length signature through the resolver is refused, not a 500', async () => {
+    await expect(call({ ...signed(), razorpaySignature: 'short' }))
+      .rejects.toMatchObject({ extensions: { code: 'PAYMENT_VERIFICATION_FAILED' } });
+    expect(orderService.createOrder).not.toHaveBeenCalled();
+  });
+});
+
 describe('server values only', () => {
   it('passes ONLY the Razorpay ids to the service — client items/totals/store never reach it', async () => {
     await call(signed('rzp_A', 'pay_A', {

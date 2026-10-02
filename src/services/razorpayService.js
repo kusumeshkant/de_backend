@@ -154,14 +154,25 @@ async function createRazorpayOrderFromCart({ userId, storeId, items, discountCod
   };
 }
 
+// Verifies Razorpay's HMAC-SHA256 signature over "orderId|paymentId".
+// The comparison is constant-time (crypto.timingSafeEqual) so response timing
+// cannot leak how many leading characters of a forged signature were right.
+// Anything malformed — missing secret, non-string input, wrong length — is
+// simply invalid; it never throws.
 function verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature) {
   const keySecret = _keySecret || process.env.RAZORPAY_KEY_SECRET;
-  const body = `${razorpayOrderId}|${razorpayPaymentId}`;
-  const expectedSignature = crypto
-    .createHmac('sha256', keySecret)
-    .update(body)
-    .digest('hex');
-  return expectedSignature === razorpaySignature;
+  if (!keySecret || typeof razorpaySignature !== 'string' ||
+      typeof razorpayOrderId !== 'string' || typeof razorpayPaymentId !== 'string') {
+    return false;
+  }
+  const expected = Buffer.from(
+    crypto.createHmac('sha256', keySecret).update(`${razorpayOrderId}|${razorpayPaymentId}`).digest('hex'),
+    'utf8'
+  );
+  const given = Buffer.from(razorpaySignature, 'utf8');
+  // timingSafeEqual throws on unequal lengths — a wrong-length signature is just invalid.
+  if (given.length !== expected.length) return false;
+  return crypto.timingSafeEqual(expected, given);
 }
 
 module.exports = { setRazorpayEnv, createRazorpayOrderForAmount, createRazorpayOrderFromCart, verifyPayment };
