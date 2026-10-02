@@ -30,9 +30,10 @@ const orderSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   storeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Store' },
   items: [orderItemSchema],
-  total: { type: Number, required: true },
+  total: { type: Number, required: true },        // discounted subtotal (S-7: total + tax = grandTotal)
   tax: { type: Number, required: true },
   grandTotal: { type: Number, required: true },
+  discountAmount: { type: Number, default: 0 },
   status: {
     type: String,
     enum: ['pending', 'preparing', 'ready', 'completed', 'cancelled'],
@@ -59,5 +60,11 @@ orderSchema.index({ storeId: 1, createdAt: -1 });
 orderSchema.index({ storeId: 1, status: 1 });
 // customer order history — used by getMyOrders
 orderSchema.index({ user: 1, createdAt: -1 });
+// One order per Razorpay order (A3 backstop behind the atomic PendingPayment
+// claim). Partial so legacy/manual orders without a Razorpay id are unaffected.
+orderSchema.index(
+  { razorpayOrderId: 1 },
+  { unique: true, partialFilterExpression: { razorpayOrderId: { $type: 'string' } } }
+);
 
 module.exports = mongoose.model('Order', orderSchema);
