@@ -40,9 +40,17 @@ jest.mock('../src/models/Product', () => ({
 jest.mock('../src/models/Order', () =>
   jest.fn().mockImplementation((data) => ({ ...data, _id: `order-${Math.random()}`, save: jest.fn().mockResolvedValue() }))
 );
+// Each order has its own server PendingPayment (A3: items come from here, not
+// from the client). The claim succeeds once per razorpayOrderId.
+const mockPending = new Map();
 jest.mock('../src/models/PendingPayment', () => ({
-  findOne: jest.fn(async ({ razorpayOrderId }) => ({ razorpayOrderId, userId: 'user-1', serverTotal: 118 })),
-  deleteOne: jest.fn().mockResolvedValue({}),
+  findOneAndUpdate: jest.fn(async ({ razorpayOrderId }) => {
+    const p = mockPending.get(razorpayOrderId);
+    if (!p || p.status !== 'pending') return null;
+    p.status = 'consumed';
+    return { ...p };
+  }),
+  findOne: jest.fn(() => ({ select: jest.fn().mockResolvedValue(null) })),
 }));
 jest.mock('../src/models/CartCheckEvent', () => ({ findOneAndUpdate: jest.fn().mockResolvedValue(null) }));
 jest.mock('../src/models/Store', () => ({ findById: jest.fn().mockResolvedValue({ name: 'S', storeCode: 'S01' }) }));
@@ -57,16 +65,20 @@ const seed = (stock) => {
   mockProducts.clear();
   mockProducts.set('LAST', { _id: 'p-last', barcode: 'LAST', storeId: STORE, stock, isAvailable: true });
 };
-const order = (n, quantity = 1) => createOrder({
-  userId: 'user-1', storeId: STORE,
-  items: [{ barcode: 'LAST', name: 'Tee', price: 100, quantity }],
-  total: 100, tax: 18, grandTotal: 118,
-  razorpayOrderId: `rzp-${n}`, razorpayPaymentId: `pay-${n}`, razorpaySignature: 'sig',
-});
+const order = (n, quantity = 1) => {
+  mockPending.set(`rzp-${n}`, {
+    razorpayOrderId: `rzp-${n}`, userId: 'user-1', storeId: STORE, status: 'pending',
+    items: [{ barcode: 'LAST', name: 'Tee', price: 100, quantity }],
+    subtotal: 100 * quantity, discountAmount: 0, total: 100 * quantity, tax: 18 * quantity, serverTotal: 118 * quantity,
+  });
+  return createOrder({
+    userId: 'user-1', razorpayOrderId: `rzp-${n}`, razorpayPaymentId: `pay-${n}`, razorpaySignature: 'sig',
+  });
+};
 const decrementsApplied = async () =>
   (await Promise.all(Product.findOneAndUpdate.mock.results.map((r) => r.value))).filter(Boolean).length;
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => { jest.clearAllMocks(); mockPending.clear(); });
 
 describe('concurrent orders on the last unit', () => {
   it('two simultaneous orders for the last unit decrement it exactly once', async () => {

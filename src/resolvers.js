@@ -6,7 +6,7 @@ const { inviteStaff, bulkInviteStaff, validateInviteToken, acceptInvite, getStor
 const { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderToStaff, sendPermissionRequestNotification, sendPermissionStatusNotification } = require('./services/notificationService_cf');
 const { getProductByBarcode, getStoreProducts, getProductsPaginated, createProduct, updateProduct, deleteProduct, bulkUpsertProducts, getUploadLogs } = require('./services/productService');
 const { getStores, getStoreById, getStoreByCode, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated } = require('./services/storeService');
-const { createOrder, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getOrdersPaginated, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
+const { createOrder, findOrderForPayment, getPendingForUser, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getOrdersPaginated, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
 const { createRazorpayOrderForAmount, createRazorpayOrderFromCart, verifyPayment } = require('./services/razorpayService');
 const { requestPermission, getPendingRequests, getAllRequests, getMyRequests, approveRequest, rejectRequest, revokePermission, getStaffPermissions, checkPermission } = require('./services/permissionService');
 const { generateDiscountCode, validateDiscountCode, consumeDiscountCode, getDiscountLogs } = require('./services/discountService');
@@ -851,7 +851,10 @@ const resolvers = {
     createOrder: async (_, args, context) => {
       requireAuth(context);
       try {
-        const { razorpayOrderId, razorpayPaymentId, razorpaySignature, discountCode, ...orderArgs } = args;
+        // A3: only the three Razorpay values are used. storeId, items, total,
+        // tax, grandTotal and discountCode are still accepted for older clients
+        // but IGNORED — the order is built from the server's PendingPayment.
+        const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = args;
 
         const isValid = verifyPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
         if (!isValid) {
@@ -863,24 +866,39 @@ const resolvers = {
         const user = requireDbUser(context);
         requireRole(user, Roles.CUSTOMER);
 
-        await assertLimitNotReached(args.storeId, PLAN_LIMITS.MAX_ORDERS_PER_MONTH);
+        // Retry of a payment that already became an order: return it, with no
+        // second notification, discount use or stock decrement.
+        const existing = await findOrderForPayment(razorpayOrderId, user._id);
+        if (existing) return existing;
+
+        // The monthly cap is checked against the store the payment was priced
+        // for, never against a storeId the client sends now.
+        const pending = await getPendingForUser(razorpayOrderId, user._id);
+        if (pending) {
+          await assertLimitNotReached(pending.storeId, PLAN_LIMITS.MAX_ORDERS_PER_MONTH);
+        }
 
         const order = await createOrder({
           userId: user._id,
           razorpayOrderId,
           razorpayPaymentId,
           razorpaySignature,
-          ...orderArgs,
         });
         logger.info(`Order created: ${order._id}`);
+        if (args.storeId && String(args.storeId) !== String(order.storeId)) {
+          logger.warn(`createOrder: client storeId ${args.storeId} ignored; payment was for store ${order.storeId} (order ${order._id})`);
+        }
 
-        // If a discount code was used, consume it and write the audit log (non-blocking)
-        if (discountCode) {
+        // Consume the discount code the payment was priced with — never one the
+        // client names at this point (non-blocking).
+        if (order._discountCode) {
           consumeDiscountCode({
-            code:        discountCode,
-            storeId:     order.storeId,
-            orderId:     order._id,
-            grandTotal:  order.grandTotal,
+            code:           order._discountCode,
+            storeId:        order.storeId,
+            orderId:        order._id,
+            grandTotal:     order.grandTotal,
+            originalAmount: order._subtotal,
+            discountAmount: order.discountAmount,
           }).catch(e => logger.error(`consumeDiscountCode failed for order ${order._id}: ${e.message}`));
         }
 
