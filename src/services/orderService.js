@@ -5,27 +5,77 @@ const Product = require('../models/Product');
 const CartCheckEvent = require('../models/CartCheckEvent');
 const User = require('../models/User');
 const PendingPayment = require('../models/PendingPayment');
-const { ErrorHandler } = require('../utils/errorHandler');
+const { GraphQLError } = require('graphql');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
 const logger = require('../utils/logger_cf');
 
-async function createOrder({ userId, storeId, items, total, tax, grandTotal, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
-  if (!items || items.length === 0) {
-    throw new ErrorHandler('Cart is empty', 400);
+const paymentError = (message, code) => new GraphQLError(message, { extensions: { code } });
+
+// The order already created for this Razorpay order, if any — lets a retried
+// createOrder return the same order instead of failing or duplicating it.
+async function findOrderForPayment(razorpayOrderId, userId) {
+  return Order.findOne({ razorpayOrderId, user: userId });
+}
+
+// The caller's unconsumed PendingPayment for this Razorpay order, or null.
+// Records created before A3 have no status field; $in: [..., null] matches them.
+async function getPendingForUser(razorpayOrderId, userId) {
+  return PendingPayment.findOne({ razorpayOrderId, userId, status: { $in: ['pending', null] } });
+}
+
+// Line items and totals for the order, taken ONLY from the PendingPayment.
+// Records created before A3 (in flight across the deploy) carry no total/tax
+// and client-supplied items; they are honoured with totals derived from the
+// server-charged amount so a customer who already paid still gets an order.
+function _orderValuesFrom(pending) {
+  const grandTotal = pending.serverTotal;
+  if (typeof pending.total === 'number' && typeof pending.tax === 'number') {
+    return { items: pending.items, total: pending.total, tax: pending.tax, discountAmount: pending.discountAmount ?? 0, grandTotal };
+  }
+  const grandPaise = Math.round(grandTotal * 100);
+  const totalPaise = Math.round(grandPaise / 1.18);
+  return { items: pending.items, total: totalPaise / 100, tax: (grandPaise - totalPaise) / 100, discountAmount: 0, grandTotal };
+}
+
+/**
+ * Turns a verified Razorpay payment into an Order (A3).
+ *
+ * The caller must already have verified the payment signature. Everything in
+ * the order — store, line items, total, tax, discount, grand total — comes from
+ * the PendingPayment written by createRazorpayOrderFromCart. Nothing from the
+ * client is used, and stock is decremented from that same item list.
+ *
+ * The PendingPayment is claimed atomically (pending → consumed), so concurrent
+ * or repeated calls for one Razorpay order produce exactly one Order.
+ */
+async function createOrder({ userId, razorpayOrderId, razorpayPaymentId, razorpaySignature }) {
+  const pending = await PendingPayment.findOneAndUpdate(
+    { razorpayOrderId, userId, status: { $in: ['pending', null] } },
+    {
+      $set: { status: 'consumed', razorpayPaymentId, consumedAt: new Date() },
+      $unset: { expiresAt: 1 }, // keep the consumed record for audit (TTL skips it)
+    },
+    { new: true }
+  );
+
+  if (!pending) {
+    // Retry of a payment that already became an order: return that order.
+    const existing = await findOrderForPayment(razorpayOrderId, userId);
+    if (existing) return existing;
+
+    const other = await PendingPayment.findOne({ razorpayOrderId }).select('userId status');
+    if (other && other.userId.toString() !== userId.toString()) {
+      throw paymentError('Payment session does not belong to this account.', 'FORBIDDEN');
+    }
+    if (other && other.status === 'consumed') {
+      // Another request claimed it and is still writing the order.
+      throw paymentError('This payment is already being processed. Please check My Orders.', 'ORDER_IN_PROGRESS');
+    }
+    throw paymentError('Payment session not found or expired. Please restart checkout.', 'PAYMENT_SESSION_NOT_FOUND');
   }
 
-  // Verify payment amount via server-anchored PendingPayment record.
-  // PendingPayment was created by createRazorpayOrderFromCart with a
-  // server-computed price — the client never controlled this amount.
-  const pending = await PendingPayment.findOne({ razorpayOrderId });
-  if (!pending) {
-    throw new ErrorHandler('Payment session not found or expired. Please restart checkout.', 400);
-  }
-  if (pending.userId.toString() !== userId.toString()) {
-    throw new ErrorHandler('Payment session does not belong to this account.', 403);
-  }
-  const authorizedTotal = pending.serverTotal;
-  await PendingPayment.deleteOne({ razorpayOrderId });
+  const storeId = pending.storeId;
+  const { items, total, tax, discountAmount, grandTotal } = _orderValuesFrom(pending);
 
   const order = new Order({
     user: userId,
@@ -33,7 +83,8 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     items,
     total,
     tax,
-    grandTotal: authorizedTotal,  // server-computed, not client-supplied
+    discountAmount,
+    grandTotal,
     status: 'pending',
     razorpayOrderId,
     razorpayPaymentId,
@@ -41,7 +92,20 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     paymentStatus: 'success',
   });
 
-  await order.save();
+  try {
+    await order.save();
+  } catch (err) {
+    // Unique-index backstop: an order for this Razorpay order already exists.
+    if (err?.code === 11000) {
+      const existing = await findOrderForPayment(razorpayOrderId, userId);
+      if (existing) return existing;
+    }
+    throw err;
+  }
+  // The discount code the payment was priced with — the resolver consumes this
+  // one, never a code supplied by the client at createOrder time.
+  order._discountCode = pending.discountCode ?? null;
+  order._subtotal = pending.subtotal ?? null;
 
   // Mark the most recent cart check event for this user+store as converted (non-blocking)
   const sixtyMinutesAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -83,7 +147,7 @@ async function createOrder({ userId, storeId, items, total, tax, grandTotal, raz
     orderId: order._id,
     storeName: store?.name ?? null,
     itemCount: items.length,
-    grandTotal: authorizedTotal,
+    grandTotal,
   }).catch(() => {});
 
   return order;
@@ -914,6 +978,8 @@ async function getOrdersPaginated({
 
 module.exports = {
   createOrder,
+  findOrderForPayment,
+  getPendingForUser,
   getMyOrders,
   getOrderById,
   getStoreOrders,

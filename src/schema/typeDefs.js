@@ -111,9 +111,10 @@ const typeDefs = `#graphql
     storeId: ID
     storeName: String
     storeCode: String
-    total: Float!
+    total: Float!          # discounted subtotal: total + tax = grandTotal
     tax: Float!
     grandTotal: Float!
+    discountAmount: Float
     status: String!
     paymentStatus: String!
     createdAt: String!
@@ -303,6 +304,8 @@ const typeDefs = `#graphql
     id: String!
     amount: Int!
     currency: String!
+    # Razorpay key the order was created with — open checkout with this key.
+    keyId: String
   }
 
   # ── Bulk Upload ──────────────────────────────────────────────────────────────
@@ -376,16 +379,20 @@ const typeDefs = `#graphql
     createRazorpayOrder(storeId: ID!, items: [OrderItemInput!]!, discountCode: String): RazorpayOrder!
 
     # Step 2: Verify payment and save order in DB (requires Firebase auth)
+    # Only the three razorpay* values are used. The order — store, items,
+    # totals, discount — is built from the server's record of what was paid
+    # for. storeId, items, total, tax, grandTotal and discountCode are accepted
+    # for older clients and IGNORED. A repeat call returns the same order.
     createOrder(
-      storeId: ID!
-      items: [OrderItemInput!]!
-      total: Float!
-      tax: Float!
-      grandTotal: Float!
+      storeId: ID
+      items: [OrderItemInput!]
+      total: Float
+      tax: Float
+      grandTotal: Float
       razorpayOrderId: String!
       razorpayPaymentId: String!
       razorpaySignature: String!
-      discountCode: String        # optional — if provided, marks code used & writes DiscountLog
+      discountCode: String
     ): Order!
 
     # Update order status — called by dq_staff (requires Firebase auth)

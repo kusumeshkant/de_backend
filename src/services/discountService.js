@@ -73,17 +73,21 @@ async function validateDiscountCode({ code, storeId, subtotal }) {
 // Called from createOrder resolver when discountCode is provided.
 // This is idempotent-safe: if the code is already marked used, we log it and move on.
 
-async function consumeDiscountCode({ code, storeId, orderId, grandTotal }) {
+async function consumeDiscountCode({ code, storeId, orderId, grandTotal, originalAmount: knownOriginal, discountAmount: knownDiscount }) {
   const dc = await DiscountCode.findOne({ code: code.toUpperCase(), storeId });
   if (!dc) return null; // code doesn't belong to this store — silently skip
 
   if (dc.isUsed || dc.isRevoked) return null;
   if (new Date() > dc.expiresAt) return null;
 
-  // Reconstruct original amount from the final amount + discount
-  // grandTotal is what the customer PAID (already discounted)
-  const originalAmount  = Math.round((grandTotal / (1 - dc.discountPercent / 100)) * 100) / 100;
-  const discountAmount  = _calcDiscount(originalAmount, dc.discountPercent);
+  // The server's pre-discount subtotal and discount, when the caller has them
+  // (A3: from the PendingPayment). Otherwise fall back to reconstructing them
+  // from grandTotal, which is what the customer PAID (already discounted).
+  const haveKnown = typeof knownOriginal === 'number' && typeof knownDiscount === 'number';
+  const originalAmount  = haveKnown
+    ? knownOriginal
+    : Math.round((grandTotal / (1 - dc.discountPercent / 100)) * 100) / 100;
+  const discountAmount  = haveKnown ? knownDiscount : _calcDiscount(originalAmount, dc.discountPercent);
 
   // Mark used
   dc.isUsed    = true;
