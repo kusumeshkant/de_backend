@@ -80,7 +80,14 @@ const typeDefs = `#graphql
     distanceKm: Float
   }
 
+  # How the customer added a cart line. A hint for exit staff only.
+  enum EntryMethod {
+    SCAN
+    MANUAL
+  }
+
   type OrderItem {
+    id: ID                    # line id — exit staff tick lines by this
     barcode: String!
     name: String!
     mrp: Float
@@ -88,6 +95,30 @@ const typeDefs = `#graphql
     quantity: Int!
     sku: String
     description: String
+    color: String
+    size: String
+    entryMethod: EntryMethod!
+  }
+
+  enum ExitOutcome {
+    OK_TO_EXIT
+    EXITED
+    ALREADY_EXITED
+    CANCELLED
+    NOT_PAID
+    OWN_ORDER
+    FLAGGED
+    LINES_NOT_VERIFIED
+    NOT_FOUND
+  }
+
+  # Result of scanning or completing an exit. order is null only for NOT_FOUND.
+  type ExitResult {
+    outcome: ExitOutcome!
+    message: String!
+    order: Order
+    exitedAt: String
+    exitedByName: String
   }
 
   type StaffAction {
@@ -104,6 +135,9 @@ const typeDefs = `#graphql
     staffId: String
     staffName: String
     timestamp: String!
+    resolvedAt: String          # set when an admin clears the flag
+    resolvedByName: String
+    resolutionNote: String
   }
 
   type Order {
@@ -123,6 +157,15 @@ const typeDefs = `#graphql
     flaggedIssue: FlaggedIssue
     completedAt: String
     cancelledAt: String
+    # Exit QR content — returned ONLY to the order's owner, and only while the
+    # order can still exit; null for everyone else.
+    exitQr: String
+    exitedAt: String
+    exitedByName: String
+    exitMethod: String          # qr | manual
+    exitReason: String          # manual exits; staff/admin only
+    hasOpenFlag: Boolean!
+    ageMinutes: Int!            # minutes since the order was paid
   }
 
   input OrderItemInput {
@@ -133,6 +176,7 @@ const typeDefs = `#graphql
     quantity: Int!
     sku: String
     description: String
+    entryMethod: EntryMethod    # optional; omitted = SCAN
   }
 
   type User {
@@ -196,6 +240,14 @@ const typeDefs = `#graphql
 
     # Look up any order by ID — used by dq_staff QR scan / search (requires Firebase auth)
     orderById(orderId: ID!): Order
+
+    # Exit: what staff see after scanning a customer's exit QR. Read-only.
+    # Staff/admin of the order's store; another store's order is NOT_FOUND.
+    verifyExit(code: String!): ExitResult!
+
+    # Paid orders that have not exited and are not cancelled, oldest first
+    # (staff/admin; platform admin must name the store).
+    openPaidOrders(storeId: ID): [Order!]!
 
     # Admin: all orders across stores, optional filters (requires Firebase auth)
     allOrders(storeId: ID, status: String): [Order!]!
@@ -396,8 +448,19 @@ const typeDefs = `#graphql
     ): Order!
 
     # Update order status — called by dq_staff (requires Firebase auth)
-    # Valid statuses: pending → preparing → ready → completed | cancelled
+    # Allowed: pending → preparing → ready, and pending/preparing/ready → cancelled
+    # (not after exit). 'completed' is refused: orders complete at the exit.
     updateOrderStatus(orderId: ID!, status: String!): Order!
+
+    # Exit by QR: every line must be ticked; single use. A retry with the same
+    # requestId returns EXITED again; any other request gets ALREADY_EXITED.
+    completeExit(code: String!, verifiedLineIds: [ID!]!, requestId: String!): ExitResult!
+
+    # Exit from the open-paid-orders list (no QR). Reason required; recorded as a manual exit.
+    completeManualExit(orderId: ID!, reason: String!, verifiedLineIds: [ID!]!, requestId: String!): ExitResult!
+
+    # Admin of the order's store only: resolve an open flag so the order can exit.
+    clearOrderFlag(orderId: ID!, note: String!): Order!
 
     # Flag an issue on an order — called by dq_staff (requires Firebase auth)
     # reasons: wrong_items | payment_mismatch | customer_absent | other

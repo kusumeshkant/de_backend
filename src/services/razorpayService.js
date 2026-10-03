@@ -57,9 +57,19 @@ function badInput(message, code = 'BAD_USER_INPUT') {
   return new GraphQLError(message, { extensions: { code } });
 }
 
+// How the customer added a line: a hint for exit staff, never used for price.
+// Accepts the GraphQL enum (SCAN/MANUAL) or lower case; absent means scanned.
+function normaliseEntryMethod(value, barcode) {
+  if (value === undefined || value === null) return 'scan';
+  const v = typeof value === 'string' ? value.toLowerCase() : '';
+  if (v !== 'scan' && v !== 'manual') throw badInput(`Invalid entryMethod for ${barcode}`);
+  return v;
+}
+
 // Validates the cart shape and merges duplicate barcodes. Quantities must be
 // whole numbers 1..MAX_LINE_QUANTITY — a zero, negative or fractional quantity
-// would otherwise lower the server-computed total.
+// would otherwise lower the server-computed total. A merged line is 'manual'
+// if any part of it was typed in (the same "sticky manual" rule as the app).
 function normaliseCart(items) {
   if (!Array.isArray(items) || items.length === 0) throw badInput('Your cart is empty');
   const lines = new Map();
@@ -70,10 +80,14 @@ function normaliseCart(items) {
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_LINE_QUANTITY) {
       throw badInput(`Invalid quantity for ${barcode}: must be a whole number from 1 to ${MAX_LINE_QUANTITY}`);
     }
-    lines.set(barcode, (lines.get(barcode) ?? 0) + quantity);
+    const entryMethod = normaliseEntryMethod(item?.entryMethod, barcode);
+    const line = lines.get(barcode) ?? { quantity: 0, entryMethod: 'scan' };
+    line.quantity += quantity;
+    if (entryMethod === 'manual') line.entryMethod = 'manual';
+    lines.set(barcode, line);
   }
   if (lines.size > MAX_CART_LINES) throw badInput(`A cart can hold at most ${MAX_CART_LINES} different products`);
-  for (const [barcode, quantity] of lines) {
+  for (const [barcode, { quantity }] of lines) {
     if (quantity > MAX_LINE_QUANTITY) {
       throw badInput(`Invalid quantity for ${barcode}: must be a whole number from 1 to ${MAX_LINE_QUANTITY}`);
     }
@@ -88,7 +102,7 @@ async function createRazorpayOrderFromCart({ userId, storeId, items, discountCod
   // insufficient stock are rejected here, before the customer is asked to pay.
   const serverItems = [];
   let subtotalPaise = 0;
-  for (const [barcode, quantity] of lines) {
+  for (const [barcode, { quantity, entryMethod }] of lines) {
     const product = await Product.findOne({ barcode, storeId, isAvailable: { $ne: false } });
     if (!product) {
       throw badInput(`Product not found or no longer available: ${barcode}`, 'PRODUCT_UNAVAILABLE');
@@ -106,6 +120,10 @@ async function createRazorpayOrderFromCart({ userId, storeId, items, discountCod
       quantity,
       sku: product.sku ?? undefined,
       description: product.description ?? undefined,
+      // Catalogue snapshot for exit staff, plus the client's entry hint.
+      color: product.color || undefined,
+      size: product.size?.garment || product.size?.actual || undefined,
+      entryMethod,
     });
   }
 

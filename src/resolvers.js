@@ -8,6 +8,7 @@ const { getProductByBarcode, getStoreProducts, getProductsPaginated, createProdu
 const { getStores, getStoreById, getStoreByCode, getNearbyStores, createStore, updateStore, deleteStore, getStoresPaginated } = require('./services/storeService');
 const { createOrder, findOrderForPayment, getPendingForUser, getMyOrders, getOrderById, getStoreOrders, getOrderByIdForStaff, updateOrderStatus, flagOrderIssue, getAllOrders, getOrdersPaginated, getDashboardStats, getStoreStats, validateCartStock, getStoreAnalytics, getCustomerRetention, getStaffPerformance, getBasketAbandonmentStats, getCustomerLTV, getMonthlyRevenue } = require('./services/orderService');
 const { createRazorpayOrderForAmount, createRazorpayOrderFromCart, verifyPayment } = require('./services/razorpayService');
+const { verifyExit, completeExit, completeManualExit, getOpenPaidOrders, clearOrderFlag, exitQrFor } = require('./services/exitService');
 const { requestPermission, getPendingRequests, getAllRequests, getMyRequests, approveRequest, rejectRequest, revokePermission, getStaffPermissions, checkPermission } = require('./services/permissionService');
 const { generateDiscountCode, validateDiscountCode, consumeDiscountCode, getDiscountLogs } = require('./services/discountService');
 const { logProductCreate, logProductUpdate, logProductDelete, getProductChangeLogs } = require('./services/auditLogService');
@@ -48,6 +49,21 @@ const {
   requireTargetStore,
   assertOrderInScope,
 } = require('./utils/guards');
+
+// Admins (store admin or platform admin) may complete the exit for their own
+// order; staff may not (decision 4, Task 6).
+const isExitAdmin = (user) => hasRole(user, Roles.ADMIN) || isPlatformAdmin(user);
+
+// Tell the customer their exit went through. Fire-and-forget: the exit is
+// already recorded, a push failure must not turn it into an error.
+function notifyExited(result) {
+  if (result?.outcome !== 'EXITED' || !result.order) return;
+  const User = require('./models/User');
+  Promise.resolve(User.findById(result.order.user))
+    .then((customer) => customer?.fcmToken
+      && sendOrderStatusUpdate(customer.fcmToken, { status: 'completed', storeName: result.order._storeName }))
+    .catch(() => {});
+}
 
 // ── Resolvers ───────────────────────────────────────────────────────────────────
 
@@ -292,6 +308,35 @@ const resolvers = {
         return await getOrderByIdForStaff(orderId);
       } catch (error) {
         logger.error(`orderById error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    // Exit QR scan — read-only. The lookup itself is scoped to the caller's
+    // store, so another store's order is simply NOT_FOUND (nothing leaks).
+    verifyExit: async (_, { code }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
+        const storeScope = resolveStoreScope(user); // store-less non-platform caller → FORBIDDEN
+        return await verifyExit({ code, caller: user, isAdmin: isExitAdmin(user), storeScope });
+      } catch (error) {
+        logger.error(`verifyExit error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    openPaidOrders: async (_, { storeId }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
+        if (storeId) requireStoreOwnership(user, storeId); // naming another store is refused, not ignored
+        const target = requireTargetStore(user, storeId);
+        return await getOpenPaidOrders(target);
+      } catch (error) {
+        logger.error(`openPaidOrders error: ${error.message}`);
         throw error;
       }
     },
@@ -975,6 +1020,57 @@ const resolvers = {
       }
     },
 
+    // Exit by QR (A5 / F-10). Role and store scope are checked before any
+    // read; the exit itself is one atomic, single-use write in exitService.
+    completeExit: async (_, { code, verifiedLineIds, requestId }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
+        const storeScope = resolveStoreScope(user);
+        const result = await completeExit({
+          code, verifiedLineIds, requestId, caller: user, isAdmin: isExitAdmin(user), storeScope,
+        });
+        notifyExited(result);
+        return result;
+      } catch (error) {
+        logger.error(`completeExit error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    // Exit from the open-paid-orders list, without a QR. Reason required.
+    completeManualExit: async (_, { orderId, reason, verifiedLineIds, requestId }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.STAFF, Roles.ADMIN);
+        const storeScope = resolveStoreScope(user);
+        const result = await completeManualExit({
+          orderId, reason, verifiedLineIds, requestId, caller: user, isAdmin: isExitAdmin(user), storeScope,
+        });
+        notifyExited(result);
+        return result;
+      } catch (error) {
+        logger.error(`completeManualExit error: ${error.message}`);
+        throw error;
+      }
+    },
+
+    // Only an admin of the order's store may clear a flag (staff cannot).
+    clearOrderFlag: async (_, { orderId, note }, context) => {
+      requireAuth(context);
+      try {
+        const user = requireDbUser(context);
+        requireRole(user, Roles.ADMIN);
+        await assertOrderInScope(user, orderId);
+        return await clearOrderFlag({ orderId, note, caller: user });
+      } catch (error) {
+        logger.error(`clearOrderFlag error: ${error.message}`);
+        throw error;
+      }
+    },
+
     // â”€â”€ Admin only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /**
@@ -1430,8 +1526,29 @@ const resolvers = {
       return {
         ...f.toObject?.() ?? f,
         timestamp: f.timestamp instanceof Date ? f.timestamp.toISOString() : f.timestamp,
+        resolvedAt: f.resolvedAt instanceof Date ? f.resolvedAt.toISOString() : (f.resolvedAt ?? null),
+        resolvedByName: f.resolvedBy?.staffName ?? null,
       };
     },
+    // The exit QR is a bearer credential: only the order's owner ever gets it.
+    exitQr: (order, _, context) => {
+      const me = context?.dbUser?._id;
+      const owner = order.user?._id ?? order.user;
+      if (!me || !owner || owner.toString() !== me.toString()) return null;
+      return exitQrFor(order);
+    },
+    exitedAt: (order) => (order.exitedAt instanceof Date ? order.exitedAt.toISOString() : (order.exitedAt ?? null)),
+    exitedByName: (order) => order.exitedBy?.staffName ?? null,
+    exitMethod: (order) => order.exitMethod ?? null,
+    exitReason: (order, _, context) =>
+      (context?.dbUser && hasRole(context.dbUser, Roles.STAFF, Roles.ADMIN) ? order.exitReason ?? null : null),
+    hasOpenFlag: (order) => !!order.flaggedIssue && !order.flaggedIssue.resolvedAt,
+    ageMinutes: (order) => Math.max(0, Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000)),
+  },
+
+  OrderItem: {
+    id: (item) => item._id?.toString() ?? null,
+    entryMethod: (item) => (item.entryMethod === 'manual' ? 'MANUAL' : 'SCAN'),
   },
 
   User: {

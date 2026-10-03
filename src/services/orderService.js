@@ -7,6 +7,7 @@ const User = require('../models/User');
 const PendingPayment = require('../models/PendingPayment');
 const { GraphQLError } = require('graphql');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
+const { newExitCode } = require('./exitService');
 const logger = require('../utils/logger_cf');
 
 // Revenue = money taken and kept: paid and not cancelled, whether or not the
@@ -96,6 +97,7 @@ async function createOrder({ userId, razorpayOrderId, razorpayPaymentId, razorpa
     razorpayPaymentId,
     razorpaySignature,
     paymentStatus: 'success',
+    exitCode: newExitCode(), // behind the customer's single-use exit QR
   });
 
   try {
