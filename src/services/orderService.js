@@ -222,25 +222,39 @@ const STATUS_ACTION_MAP = {
   cancelled: 'cancelled',
 };
 
+// Statuses each target may be reached from. 'completed' is deliberately absent:
+// an order completes only through the exit (exitService.completeExit), which
+// records who let the customer out and makes the exit QR single-use.
+const ALLOWED_FROM = {
+  preparing: ['pending'],
+  ready: ['preparing'],
+  cancelled: ['pending', 'preparing', 'ready'],
+};
+
 async function updateOrderStatus(orderId, status, staffId, staffName) {
   if (!VALID_STATUSES.includes(status)) {
     throw new Error(`Invalid status "${status}". Must be one of: ${VALID_STATUSES.join(', ')}`);
+  }
+  if (status === 'completed') {
+    throw new GraphQLError("Orders are completed at the exit: scan the customer's exit QR.", {
+      extensions: { code: 'EXIT_REQUIRED' },
+    });
+  }
+  const allowedFrom = ALLOWED_FROM[status];
+  if (!allowedFrom) {
+    throw new GraphQLError(`An order cannot be moved back to "${status}".`, { extensions: { code: 'INVALID_TRANSITION' } });
   }
 
   const action = STATUS_ACTION_MAP[status] || status;
 
   const timestampUpdate = {};
-  if (status === 'completed') timestampUpdate.completedAt = new Date();
   if (status === 'cancelled') timestampUpdate.cancelledAt = new Date();
 
-  // For cancellation: capture previous status before updating, to guard against
-  // double-cancel double-restoring stock.
-  const prevOrder = status === 'cancelled'
-    ? await Order.findById(orderId).select('status storeId items')
-    : null;
-
-  const order = await Order.findByIdAndUpdate(
-    orderId,
+  // One atomic write: it only applies while the order is in an allowed status
+  // and has not exited. Two concurrent cancels therefore cancel (and restock)
+  // once, and an order that has left the store can no longer be cancelled.
+  const order = await Order.findOneAndUpdate(
+    { _id: orderId, status: { $in: allowedFrom }, exitedAt: null },
     {
       status,
       ...timestampUpdate,
@@ -251,11 +265,19 @@ async function updateOrderStatus(orderId, status, staffId, staffName) {
     { new: true }
   );
 
-  if (!order) throw new Error('Order not found');
+  if (!order) {
+    const current = await Order.findById(orderId).select('status exitedAt');
+    if (!current) throw new Error('Order not found');
+    const where = current.exitedAt ? 'it has already exited' : `it is ${current.status}`;
+    throw new GraphQLError(`Cannot change this order to ${status}: ${where}.`, {
+      extensions: { code: 'INVALID_TRANSITION' },
+    });
+  }
 
-  // Restore stock when cancelling (only if the order was not already cancelled).
+  // Restore stock when cancelling. The atomic filter above guarantees this
+  // order was open until this request, so stock is restored exactly once.
   // Uses $set: { isAvailable: true } to un-soft-delete any product zeroed by this order.
-  if (status === 'cancelled' && prevOrder && prevOrder.status !== 'cancelled') {
+  if (status === 'cancelled') {
     await Promise.all(
       (order.items || []).map(item => {
         const qty = item.quantity ?? 1;

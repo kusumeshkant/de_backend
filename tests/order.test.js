@@ -27,6 +27,7 @@ jest.mock('../src/models/Order', () => {
   MockOrder.find = mockOrderFind;
   MockOrder.findById = jest.fn();
   MockOrder.findByIdAndUpdate = jest.fn();
+  MockOrder.findOneAndUpdate = jest.fn();
   MockOrder.countDocuments = jest.fn().mockResolvedValue(0);
   return MockOrder;
 });
@@ -139,15 +140,8 @@ describe('updateOrderStatus — stock restoration on cancellation', () => {
     mockProductFindOneAndUpdate.mockResolvedValue({ stock: 3, isAvailable: true });
   });
 
-  it('restores stock for each item when order is cancelled from a non-cancelled state', async () => {
-    Order.findById.mockReturnValue({
-      select: jest.fn().mockResolvedValue({
-        status: 'preparing',
-        storeId: mockStoreId,
-        items: mockItems,
-      }),
-    });
-    Order.findByIdAndUpdate.mockResolvedValue({
+  it('restores stock for each item when an open order is cancelled (one atomic conditional write)', async () => {
+    Order.findOneAndUpdate.mockResolvedValue({
       _id: 'order-001',
       status: 'cancelled',
       storeId: mockStoreId,
@@ -157,6 +151,12 @@ describe('updateOrderStatus — stock restoration on cancellation', () => {
 
     await updateOrderStatus('order-001', 'cancelled', 'staff-1', 'Staff One');
 
+    // The write only applies while the order is open and has not exited.
+    expect(Order.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'order-001', status: { $in: ['pending', 'preparing', 'ready'] }, exitedAt: null },
+      expect.any(Object),
+      { new: true }
+    );
     expect(mockProductFindOneAndUpdate).toHaveBeenCalledTimes(2);
     expect(mockProductFindOneAndUpdate).toHaveBeenCalledWith(
       { barcode: 'BAR-001', storeId: mockStoreId },
@@ -168,38 +168,20 @@ describe('updateOrderStatus — stock restoration on cancellation', () => {
     );
   });
 
-  it('does NOT restore stock if order was already cancelled (idempotency)', async () => {
-    Order.findById.mockReturnValue({
-      select: jest.fn().mockResolvedValue({
-        status: 'cancelled',
-        storeId: mockStoreId,
-        items: mockItems,
-      }),
-    });
-    Order.findByIdAndUpdate.mockResolvedValue({
-      _id: 'order-001',
-      status: 'cancelled',
-      storeId: mockStoreId,
-      items: mockItems,
-      staffActions: [],
-    });
+  it('does NOT restore stock if the order was already cancelled — the conditional write matches nothing', async () => {
+    Order.findOneAndUpdate.mockResolvedValue(null);
+    Order.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ status: 'cancelled', exitedAt: null }) });
 
-    await updateOrderStatus('order-001', 'cancelled', 'staff-1', 'Staff One');
-
+    await expect(updateOrderStatus('order-001', 'cancelled', 'staff-1', 'Staff One'))
+      .rejects.toMatchObject({ extensions: { code: 'INVALID_TRANSITION' } });
     expect(mockProductFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('does NOT restore stock when completing (non-cancel) an order', async () => {
-    Order.findByIdAndUpdate.mockResolvedValue({
-      _id: 'order-001',
-      status: 'completed',
-      storeId: mockStoreId,
-      items: mockItems,
-      staffActions: [],
-    });
-
-    await updateOrderStatus('order-001', 'completed', 'staff-1', 'Staff One');
-
+  it("refuses 'completed' (orders complete only at the exit) — nothing written, no restock", async () => {
+    await expect(updateOrderStatus('order-001', 'completed', 'staff-1', 'Staff One'))
+      .rejects.toMatchObject({ extensions: { code: 'EXIT_REQUIRED' } });
+    expect(Order.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(Order.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(mockProductFindOneAndUpdate).not.toHaveBeenCalled();
   });
 });
