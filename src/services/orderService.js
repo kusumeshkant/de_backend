@@ -9,6 +9,12 @@ const { GraphQLError } = require('graphql');
 const { sendNewOrderToStaff } = require('./notificationService_cf');
 const logger = require('../utils/logger_cf');
 
+// Revenue = money taken and kept: paid and not cancelled, whether or not the
+// customer has exited yet (decision 2, Task 6). Orders written before
+// paymentStatus existed have no field and were paid, hence the null.
+const REVENUE_FILTER = { paymentStatus: { $in: ['success', null] }, status: { $ne: 'cancelled' } };
+const isRevenue = (o) => (o.paymentStatus ?? 'success') === 'success' && o.status !== 'cancelled';
+
 const paymentError = (message, code) => new GraphQLError(message, { extensions: { code } });
 
 // The order already created for this Razorpay order, if any — lets a retried
@@ -326,7 +332,7 @@ async function getDashboardStats() {
   const stores = await Store.find();
 
   const totalRevenue = orders
-    .filter((o) => o.status === 'completed')
+    .filter(isRevenue)
     .reduce((sum, o) => sum + (o.grandTotal ?? 0), 0);
 
   const totalOrders = orders.length;
@@ -337,7 +343,7 @@ async function getDashboardStats() {
   // Revenue per store
   const storeRevenueMap = {};
   const storeOrderCountMap = {};
-  for (const o of orders.filter((o) => o.status === 'completed')) {
+  for (const o of orders.filter(isRevenue)) {
     const sid = o.storeId?.toString();
     if (!sid) continue;
     storeRevenueMap[sid] = (storeRevenueMap[sid] ?? 0) + (o.grandTotal ?? 0);
@@ -381,10 +387,10 @@ async function getDashboardStats() {
 
   // Week-over-week revenue growth (platform level)
   const thisWeekRevenue = orders
-    .filter((o) => o.status === 'completed' && o.createdAt >= startOfThisWeek)
+    .filter((o) => isRevenue(o) && o.createdAt >= startOfThisWeek)
     .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
   const lastWeekRevenue = orders
-    .filter((o) => o.status === 'completed' && o.createdAt >= startOfLastWeek && o.createdAt < startOfThisWeek)
+    .filter((o) => isRevenue(o) && o.createdAt >= startOfLastWeek && o.createdAt < startOfThisWeek)
     .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
   const revenueGrowthRate = lastWeekRevenue > 0
     ? ((thisWeekRevenue - lastWeekRevenue) / lastWeekRevenue) * 100
@@ -413,13 +419,25 @@ async function getStoreStats(storeId) {
   // Replace with aggregation pipeline (Phase 12) for correct lifetime stats at scale.
   const orders = await Order.find({ storeId }).sort({ createdAt: -1 }).limit(1000);
 
-  const totalRevenue = orders
-    .filter((o) => o.status === 'completed')
-    .reduce((sum, o) => sum + (o.grandTotal ?? 0), 0);
+  const revenueOrders = orders.filter(isRevenue);
+  const totalRevenue = revenueOrders.reduce((sum, o) => sum + (o.grandTotal ?? 0), 0);
 
   const totalOrders = orders.length;
   const pendingOrders = orders.filter((o) => ['pending', 'preparing', 'ready'].includes(o.status)).length;
   const completedOrders = orders.filter((o) => o.status === 'completed').length;
+
+  const now = new Date();
+  const startOfThisWeek = new Date(now);
+  startOfThisWeek.setDate(now.getDate() - now.getDay());
+  startOfThisWeek.setHours(0, 0, 0, 0);
+  const startOfLastWeek = new Date(startOfThisWeek);
+  startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+  const thisWeekRevenue = revenueOrders
+    .filter((o) => o.createdAt >= startOfThisWeek)
+    .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+  const lastWeekRevenue = revenueOrders
+    .filter((o) => o.createdAt >= startOfLastWeek && o.createdAt < startOfThisWeek)
+    .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
 
   const recentOrders = orders.slice(0, 10).map((o) => {
     o._storeName = store?.name ?? null;
@@ -428,30 +446,33 @@ async function getStoreStats(storeId) {
     return o;
   });
 
-  return { store, totalRevenue, totalOrders, pendingOrders, completedOrders, recentOrders };
+  return { store, totalRevenue, totalOrders, pendingOrders, completedOrders, recentOrders, thisWeekRevenue, lastWeekRevenue };
 }
 
 async function getStoreAnalytics(storeId) {
-  const completedFilter = { status: 'completed' };
+  const revenueFilter = { ...REVENUE_FILTER };
   const allFilter = {};
   if (storeId) {
-    completedFilter.storeId = storeId;
+    revenueFilter.storeId = storeId;
     allFilter.storeId = storeId;
   }
 
-  const [completedOrders, allOrders] = await Promise.all([
-    Order.find(completedFilter).limit(5000),
+  // Revenue figures use paid, non-cancelled orders; fulfilment time and the
+  // completed count still use exited ('completed') orders.
+  const [paidOrders, allOrders] = await Promise.all([
+    Order.find(revenueFilter).limit(5000),
     Order.find(allFilter).limit(5000),
   ]);
+  const completedOrders = allOrders.filter((o) => o.status === 'completed');
 
-  const totalRevenue = completedOrders.reduce((s, o) => s + (o.grandTotal ?? 0), 0);
+  const totalRevenue = paidOrders.reduce((s, o) => s + (o.grandTotal ?? 0), 0);
   const totalOrders = allOrders.length;
   const cancelledOrders = allOrders.filter((o) => o.status === 'cancelled').length;
-  const avgOrderValue = completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0;
+  const avgOrderValue = paidOrders.length > 0 ? totalRevenue / paidOrders.length : 0;
 
-  // Top products by revenue (from completed orders)
+  // Top products by revenue (from paid orders)
   const productMap = {};
-  for (const order of completedOrders) {
+  for (const order of paidOrders) {
     for (const item of order.items) {
       if (!productMap[item.barcode]) {
         productMap[item.barcode] = { name: item.name, barcode: item.barcode, totalSold: 0, revenue: 0 };
@@ -464,9 +485,9 @@ async function getStoreAnalytics(storeId) {
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
-  // Avg items per completed order
-  const totalItemsAcrossOrders = completedOrders.reduce((s, o) => s + o.items.reduce((si, i) => si + (i.quantity ?? 1), 0), 0);
-  const avgItemsPerOrder = completedOrders.length > 0 ? totalItemsAcrossOrders / completedOrders.length : 0;
+  // Avg items per paid order
+  const totalItemsAcrossOrders = paidOrders.reduce((s, o) => s + o.items.reduce((si, i) => si + (i.quantity ?? 1), 0), 0);
+  const avgItemsPerOrder = paidOrders.length > 0 ? totalItemsAcrossOrders / paidOrders.length : 0;
 
   // Total units sold
   const totalUnitsSold = Object.values(productMap).reduce((s, p) => s + p.totalSold, 0);
@@ -479,10 +500,10 @@ async function getStoreAnalytics(storeId) {
   const startOfLastWeek = new Date(startOfThisWeek);
   startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
 
-  const thisWeekRevenue = completedOrders
+  const thisWeekRevenue = paidOrders
     .filter((o) => o.createdAt >= startOfThisWeek)
     .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
-  const lastWeekRevenue = completedOrders
+  const lastWeekRevenue = paidOrders
     .filter((o) => o.createdAt >= startOfLastWeek && o.createdAt < startOfThisWeek)
     .reduce((s, o) => s + (o.grandTotal ?? 0), 0);
 
@@ -494,10 +515,10 @@ async function getStoreAnalytics(storeId) {
   // Daily revenue — last 30 days
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const recentCompleted = completedOrders.filter((o) => o.createdAt >= thirtyDaysAgo);
+  const recentPaid = paidOrders.filter((o) => o.createdAt >= thirtyDaysAgo);
 
   const dailyMap = {};
-  for (const order of recentCompleted) {
+  for (const order of recentPaid) {
     const date = order.createdAt.toISOString().slice(0, 10);
     if (!dailyMap[date]) dailyMap[date] = { date, revenue: 0, orders: 0 };
     dailyMap[date].revenue += order.grandTotal ?? 0;
@@ -511,7 +532,7 @@ async function getStoreAnalytics(storeId) {
   for (const order of allOrders) {
     const h = new Date(order.createdAt).getHours();
     hourMap[h].orders += 1;
-    if (order.status === 'completed') hourMap[h].revenue += order.grandTotal ?? 0;
+    if (isRevenue(order)) hourMap[h].revenue += order.grandTotal ?? 0;
   }
   const peakHours = Object.values(hourMap);
 
@@ -522,13 +543,13 @@ async function getStoreAnalytics(storeId) {
   for (const order of allOrders) {
     const d = new Date(order.createdAt).getDay();
     dayMap[d].orders += 1;
-    if (order.status === 'completed') dayMap[d].revenue += order.grandTotal ?? 0;
+    if (isRevenue(order)) dayMap[d].revenue += order.grandTotal ?? 0;
   }
   const peakDays = Object.values(dayMap);
 
   // Discount depth — per product and overall, only where mrp > 0 and mrp > price
   const discountMap = {};
-  for (const order of completedOrders) {
+  for (const order of paidOrders) {
     for (const item of order.items) {
       if (!item.mrp || item.mrp <= 0 || item.mrp <= item.price) continue;
       const depth = ((item.mrp - item.price) / item.mrp) * 100;
@@ -692,7 +713,7 @@ async function getStaffPerformance(storeId) {
 
       staffMap[sid].totalOrdersHandled.add(order._id.toString());
 
-      if (action.action === 'completed') {
+      if (['completed', 'exited', 'manual_exit'].includes(action.action)) {
         staffMap[sid].ordersCompleted += 1;
         // Fulfillment time for orders this staff completed
         if (order.completedAt && order.createdAt) {
@@ -792,7 +813,7 @@ async function getCustomerRetention(storeId) {
 
 // ── Customer LTV Projection ───────────────────────────────────────────────────
 async function getCustomerLTV(storeId) {
-  const filter = { status: 'completed' };
+  const filter = { ...REVENUE_FILTER };
   if (storeId) filter.storeId = storeId;
 
   const orders = await Order.find(filter).sort({ user: 1, createdAt: 1 }).limit(5000);
@@ -880,7 +901,7 @@ async function getMonthlyRevenue(storeId, year) {
   const start = new Date(`${targetYear}-01-01T00:00:00.000Z`);
   const end   = new Date(`${targetYear + 1}-01-01T00:00:00.000Z`);
 
-  const filter = { status: 'completed', createdAt: { $gte: start, $lt: end } };
+  const filter = { ...REVENUE_FILTER, createdAt: { $gte: start, $lt: end } };
   if (storeId) filter.storeId = storeId;
 
   const orders = await Order.find(filter).select('grandTotal createdAt');
@@ -977,6 +998,8 @@ async function getOrdersPaginated({
 }
 
 module.exports = {
+  REVENUE_FILTER,
+  isRevenue,
   createOrder,
   findOrderForPayment,
   getPendingForUser,

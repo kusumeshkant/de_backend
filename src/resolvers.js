@@ -417,9 +417,11 @@ const resolvers = {
             thisWeekOrders,
             lastWeekOrders,
             orderGrowthRate: lastWeekOrders > 0 ? ((thisWeekOrders - lastWeekOrders) / lastWeekOrders) * 100 : null,
-            thisWeekRevenue: 0,
-            lastWeekRevenue: 0,
-            revenueGrowthRate: null,
+            thisWeekRevenue: stats.thisWeekRevenue ?? 0,
+            lastWeekRevenue: stats.lastWeekRevenue ?? 0,
+            revenueGrowthRate: stats.lastWeekRevenue > 0
+              ? ((stats.thisWeekRevenue - stats.lastWeekRevenue) / stats.lastWeekRevenue) * 100
+              : null,
           };
         }
         // Platform-wide totals across every store — platform scope.
