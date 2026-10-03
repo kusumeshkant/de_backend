@@ -100,12 +100,17 @@ async function withStoreName(order) {
   return order;
 }
 
+// ExitResult.exitedAt is a GraphQL String: a raw Date would be sent as epoch
+// milliseconds ("1791010482714"), so always send ISO-8601.
+// (checked by shape, not instanceof: a Date from another realm is still a Date)
+const toIso = (d) => (d && typeof d.toISOString === 'function' ? d.toISOString() : d ?? null);
+
 function result(outcome, order = null) {
   return {
     outcome,
     message: OUTCOME_MESSAGES[outcome],
     order,
-    exitedAt: order?.exitedAt ?? (order?.status === 'completed' ? order.completedAt : null) ?? null,
+    exitedAt: toIso(order?.exitedAt ?? (order?.status === 'completed' ? order.completedAt : null)),
     exitedByName: order?.exitedBy?.staffName ?? null,
   };
 }

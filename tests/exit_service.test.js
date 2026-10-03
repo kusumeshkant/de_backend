@@ -129,6 +129,8 @@ describe('completeExit — single use', () => {
     await exit.completeExit(scan());
     const again = await exit.completeExit(scan(STAFF_2, { requestId: 'req-00000002' }));
     expect(again).toMatchObject({ outcome: 'ALREADY_EXITED', exitedByName: 'Ravi' });
+    // A GraphQL String: must be ISO-8601, never a Date (sent as epoch ms — seen in UAT).
+    expect(again.exitedAt).toBe(db.stored(ID).exitedAt.toISOString());
     const check = await exit.verifyExit(scan(STAFF_2));
     expect(check.outcome).toBe('ALREADY_EXITED');
     expect(db.stored(ID).staffActions).toHaveLength(1);
