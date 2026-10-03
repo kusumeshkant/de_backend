@@ -48,7 +48,7 @@ const adminB = { _id: 'u-adminb', name: 'Other', roles: [Roles.ADMIN], storeId: 
 const storelessStaff = { _id: 'u-nostore', roles: [Roles.STAFF], storeId: null };
 const platform = { _id: 'u-plat', roles: [Roles.ADMIN, Roles.PLATFORM_ADMIN], storeId: null };
 
-const exitArgs = { code: 'DQX1:AbCdEfGhIjKlMnOpQrStUv', verifiedLineIds: ['l1'], requestId: 'req-00000001' };
+const exitArgs = { code: 'DQX1:JCTWB6R0XDPGZ5MBVHFXDD1M', verifiedLineIds: ['l1'], requestId: 'req-00000001' };
 const manualArgs = { orderId: ORDER_ID, reason: 'No phone, checked bag', verifiedLineIds: ['l1'], requestId: 'req-00000001' };
 
 const Q = resolvers.Query;
@@ -154,12 +154,12 @@ describe('allowed calls pass the caller\'s store scope and admin flag', () => {
 describe('Order field resolvers', () => {
   const F = resolvers.Order;
   const order = {
-    _id: ORDER_ID, user: 'u-cust', status: 'pending', exitCode: 'AbCdEfGhIjKlMnOpQrStUv',
+    _id: ORDER_ID, user: 'u-cust', status: 'pending', exitCode: 'JCTWB6R0XDPGZ5MBVHFXDD1M',
     exitReason: 'No phone', createdAt: new Date(Date.now() - 125 * 60000), flaggedIssue: null,
   };
 
   it('exitQr is returned only to the order\'s owner', () => {
-    expect(F.exitQr(order, {}, ctxFor(customer))).toBe('DQX1:AbCdEfGhIjKlMnOpQrStUv');
+    expect(F.exitQr(order, {}, ctxFor(customer))).toBe('DQX1:JCTWB6R0XDPGZ5MBVHFXDD1M');
     expect(F.exitQr(order, {}, ctxFor(staffA))).toBeNull();
     expect(F.exitQr(order, {}, ctxFor(adminA))).toBeNull();
     expect(F.exitQr(order, {}, ctxFor(platform))).toBeNull();

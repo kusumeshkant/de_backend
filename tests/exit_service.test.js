@@ -17,7 +17,7 @@ const OTHER_STORE = 'aaaaaaaaaaaaaaaaaaaaaaa2';
 const CUSTOMER = 'cccccccccccccccccccccc01';
 const STAFF = { _id: 'dddddddddddddddddddddd01', name: 'Ravi', roles: ['staff'], storeId: STORE };
 const STAFF_2 = { _id: 'dddddddddddddddddddddd02', name: 'Asha', roles: ['staff'], storeId: STORE };
-const CODE = 'AbCdEfGhIjKlMnOpQrStUv'; // 22 chars, base64url
+const CODE = 'JCTWB6R0XDPGZ5MBVHFXDD1M'; // 24 chars, Crockford base32 (has a 0 and a 1)
 const QR = `DQX1:${CODE}`;
 const ID = 'eeeeeeeeeeeeeeeeeeeeee01';
 const LEGACY_ID = 'eeeeeeeeeeeeeeeeeeeeee02';
@@ -51,10 +51,12 @@ beforeEach(() => {
 });
 
 describe('exit QR content', () => {
-  it('new exit codes are 22-char base64url and do not repeat', () => {
-    const codes = new Set(Array.from({ length: 2000 }, () => exit.newExitCode()));
-    expect(codes.size).toBe(2000);
-    for (const c of codes) expect(c).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  it('new exit codes are 24 upper-case Crockford characters (no I, L, O, U) and do not repeat', () => {
+    const codes = new Set(Array.from({ length: 5000 }, () => exit.newExitCode()));
+    expect(codes.size).toBe(5000);
+    for (const c of codes) expect(c).toMatch(/^[0-9A-HJKMNP-TV-Z]{24}$/);
+    // every symbol of the alphabet is used (no stuck bits)
+    expect(new Set([...codes].join('')).size).toBe(32);
   });
 
   it('the owner\'s QR is DQX1:<code>; legacy orders show their id; nothing once exited or cancelled', () => {
@@ -65,10 +67,36 @@ describe('exit QR content', () => {
     expect(exit.exitQrFor(order({ status: 'completed' }))).toBeNull();
   });
 
-  it('only DQX1 codes and 24-hex legacy ids are accepted as scan input', () => {
-    expect(exit.filterForScannedCode(` ${QR} `)).toEqual({ exitCode: CODE });
-    expect(exit.filterForScannedCode(ID)).toEqual({ _id: ID, exitCode: null });
-    for (const bad of ['', 'DQX1:', 'DQX1:short', 'DQX1:has spaces in it....', 'hello', `${ID}0`, { $ne: null }]) {
+  it('accepts the code however a person types it: grouped, any case, no prefix, O/I/L confused', () => {
+    for (const typed of [
+      QR,
+      ` ${QR} `,
+      'DQX1: JCTW B6R0 XDPG Z5MB VHFX DD1M',
+      'dqx1: jctw b6r0 xdpg z5mb vhfx dd1m',
+      'JCTW-B6R0-XDPG-Z5MB-VHFX-DD1M',
+      'jctwb6r0xdpgz5mbvhfxdd1m',
+      'DQX1: JCTW B6RO XDPG Z5MB VHFX DDIM', // O for 0, I for 1
+      'DQX1: JCTW B6Ro XDPG Z5MB VHFX DDlM', // o for 0, l for 1
+      'DQX1: JCTW B6R0 XDPG Z5MB VHFX DDLM', // L for 1
+    ]) {
+      expect(exit.filterForScannedCode(typed)).toEqual({ exitCode: CODE });
+    }
+  });
+
+  it('a bare 24-hex string may be a legacy order id or a code: both are tried, the id only for pre-cutover orders', () => {
+    expect(exit.filterForScannedCode(ID)).toEqual({ $or: [{ exitCode: ID.toUpperCase() }, { _id: ID, exitCode: null }] });
+    expect(exit.filterForScannedCode(`DQX1:${ID}`)).toEqual({ exitCode: ID.toUpperCase() }); // prefixed = a code
+  });
+
+  it('rejects everything else before any lookup — including the dropped 22-char base64url format', () => {
+    for (const bad of [
+      '', 'DQX1:', 'DQX1:short', 'hello', `${ID}0`, { $ne: null }, null,
+      'DQX1:AbCdEfGhIjKlMnOpQrStUv', // old format
+      'DQX1:JCTWB6R0XDPGZ5MBVHFXDD1', // 23
+      'DQX1:JCTWB6R0XDPGZ5MBVHFXDD1MM', // 25
+      'DQX1:JCTWB6R0XDPGZ5MBVHFXDDUM', // U is not in the alphabet
+      'DQX1:JCTWB6R0XDPGZ5MBVHFX_D1M', // symbol
+    ]) {
       expect(exit.filterForScannedCode(bad)).toBeNull();
     }
   });
@@ -252,6 +280,21 @@ describe('completeExit — single use', () => {
 
   it('a malformed requestId is refused before any read', async () => {
     await expect(exit.completeExit(scan(STAFF, { requestId: 'x' }))).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
+    expect(Order.findOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('typed with confused characters', () => {
+  it('completes the exit, and a second attempt is ALREADY_EXITED', async () => {
+    const first = await exit.completeExit(scan(STAFF, { code: 'dqx1: jctw b6ro xdpg z5mb vhfx ddlm' }));
+    expect(first.outcome).toBe('EXITED');
+    const second = await exit.completeExit(scan(STAFF_2, { code: 'JCTW B6R0 XDPG Z5MB VHFX DD1M', requestId: 'req-00000002' }));
+    expect(second.outcome).toBe('ALREADY_EXITED');
+  });
+
+  it('invalid input never reaches the database', async () => {
+    expect((await exit.verifyExit(scan(STAFF, { code: 'DQX1:AbCdEfGhIjKlMnOpQrStUv' }))).outcome).toBe('NOT_FOUND');
+    expect((await exit.completeExit(scan(STAFF, { code: 'not a code' }))).outcome).toBe('NOT_FOUND');
     expect(Order.findOne).not.toHaveBeenCalled();
   });
 });

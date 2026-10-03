@@ -117,7 +117,7 @@ describe('through to the Order', () => {
       expect.objectContaining({ barcode: 'SHIRT', color: 'Navy', size: 'M', entryMethod: 'manual' }),
       expect.objectContaining({ barcode: 'SOCKS', size: 'Free', entryMethod: 'scan', quantity: 2 }),
     ]);
-    expect(order.exitCode).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(order.exitCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{24}$/);
     expect(order.status).toBe('pending');
   });
 });

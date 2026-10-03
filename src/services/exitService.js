@@ -43,8 +43,25 @@ const OUTCOME_MESSAGES = {
 
 const badInput = (message) => new GraphQLError(message, { extensions: { code: 'BAD_USER_INPUT' } });
 
+// Crockford base32: digits and upper-case letters without I, L, O, U, so a
+// code read off a screen or out loud cannot be mistaken (I/l/1, O/0).
+const EXIT_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const EXIT_CODE_LENGTH = 24; // 24 × 5 bits = 120 bits
+
 function newExitCode() {
-  return crypto.randomBytes(16).toString('base64url'); // 128 bits, 22 chars
+  // 32 symbols: each byte's low 5 bits are uniform, so no modulo bias.
+  return [...crypto.randomBytes(EXIT_CODE_LENGTH)].map((b) => EXIT_CODE_ALPHABET[b & 31]).join('');
+}
+
+/**
+ * What a person or scanner might send for a code: grouped with spaces or
+ * hyphens, any case, with or without the "DQX1:" prefix, and with the
+ * characters people confuse (O for 0, I or L for 1). Returns the canonical
+ * code, or null if it cannot be one.
+ */
+function normaliseExitCode(body) {
+  const code = body.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
+  return new RegExp(`^[${EXIT_CODE_ALPHABET}]{${EXIT_CODE_LENGTH}}$`).test(code) ? code : null;
 }
 
 /**
@@ -56,17 +73,25 @@ function exitQrFor(order) {
   return order.exitCode ? `${EXIT_QR_PREFIX}${order.exitCode}` : order._id.toString();
 }
 
-/** Turns a scanned QR into an order filter, or null if it is not an exit QR. */
+/**
+ * Turns a scanned or typed exit code into an order filter, or null if it
+ * cannot be one (nothing is looked up then).
+ *
+ * - "DQX1:<code>" (the QR) or the code alone, normalised as above.
+ * - Legacy QR: the raw 24-hex order id. Only matches an order that never had
+ *   an exit code, so the id of a new order (partly predictable) can never
+ *   stand in for its code. A 24-hex string without the prefix is also a valid
+ *   code, so both are tried.
+ */
 function filterForScannedCode(raw) {
-  const s = typeof raw === 'string' ? raw.trim() : '';
-  if (s.startsWith(EXIT_QR_PREFIX)) {
-    const code = s.slice(EXIT_QR_PREFIX.length);
-    return /^[A-Za-z0-9_-]{22}$/.test(code) ? { exitCode: code } : null;
-  }
-  // Legacy QR: the raw order id. Only for orders that never had an exit code,
-  // so the id of a new order (partly predictable) can never stand in for its code.
-  if (/^[a-f0-9]{24}$/i.test(s)) return { _id: s, exitCode: null };
-  return null;
+  if (typeof raw !== 'string') return null;
+  let body = raw.replace(/[\s-]+/g, '');
+  const prefixed = /^DQX1:/i.test(body);
+  if (prefixed) body = body.slice(EXIT_QR_PREFIX.length);
+  const code = normaliseExitCode(body);
+  const legacyId = !prefixed && /^[a-f0-9]{24}$/i.test(body) ? body.toLowerCase() : null;
+  if (legacyId) return { $or: [{ exitCode: code }, { _id: legacyId, exitCode: null }] };
+  return code ? { exitCode: code } : null;
 }
 
 function hasOpenFlag(order) {
